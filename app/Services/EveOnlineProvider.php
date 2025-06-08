@@ -262,24 +262,13 @@ class EveOnlineProvider extends ServiceProvider
                 return null;
             }
 
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/membertracking", [
+            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/members/titles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
 
-            /*
-            Example of Member Tracking Object in the response : 
-            {
-                "character_id": 90875173,
-                "location_id": 60009928,
-                "logoff_date": "2025-06-06T15:43:54Z",
-                "logon_date": "2025-06-06T18:11:48Z",
-                "ship_type_id": 28606,
-                "start_date": "2025-06-04T16:19:00Z"
-            },
-            */
             return json_decode($response->getBody()->getContents(), true);
         } catch (GuzzleException $e) {
             Log::error('Failed to retrieve corporation members', [
@@ -305,13 +294,24 @@ class EveOnlineProvider extends ServiceProvider
                 return null;
             }
 
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/members/titles", [
+            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/membertracking", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
 
+            /*
+            Example of Member Tracking Object in the response : 
+            {
+                "character_id": 90875173,
+                "location_id": 60009928,
+                "logoff_date": "2025-06-06T15:43:54Z",
+                "logon_date": "2025-06-06T18:11:48Z",
+                "ship_type_id": 28606,
+                "start_date": "2025-06-04T16:19:00Z"
+            },
+            */
             return json_decode($response->getBody()->getContents(), true);
         } catch (GuzzleException $e) {
             Log::error('Failed to retrieve corporation members', [
