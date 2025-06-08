@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+body {
+    font-family: 'Oxygen';
+}
+
+h1 {
+    @apply text-2xl font-bold uppercase;
+}
+
+h2 {
+    @apply text-lg font-bold uppercase;
+}
+
+/* .btn {
+    @apply relative mx-[4px] bg-sky-700 px-4 py-2 text-center text-white transition-all duration-300 ease-in-out hover:bg-sky-600 max-md:w-full;
+} */
+
+/* .btn::after {
+    content: '';
+    @apply pointer-events-none absolute inset-[-4px] border-1 border-sky-600 opacity-0 transition-opacity duration-300;
+    /* Adjust the inset value to control the spacing */
+/* }
+
+.btn:hover::after {
+    @apply opacity-100;
+} */
+
+.btn {
+    @apply relative inline-flex items-center justify-center border-2 border-transparent bg-sky-700 px-4 py-2 text-center text-white transition-all duration-300 ease-in-out max-md:w-full;
+    @apply min-h-12 hover:border-sky-400 hover:bg-sky-600;
+}
+
+.btn-danger {
+    @apply bg-red-500 hover:bg-red-600;
+}
+
+.sidebar {
+    @apply z-50 h-full w-16 bg-white/5 text-white max-md:order-2 max-md:h-16 max-md:w-full;
+    @apply flex flex-col content-between justify-between max-md:flex-row;
+    @apply backdrop-blur-xs;
+    @apply border-r border-white/15 max-md:border-t lg:border-r;
+}
+
+.bg-blur {
+    @apply bg-white/5 backdrop-blur-xs;
+}
