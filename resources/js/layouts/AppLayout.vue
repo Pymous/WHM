@@ -1,4 +1,5 @@
 <script setup>
+import { usePage } from '@inertiajs/vue3';
 import { route } from 'ziggy-js';
 
 const props = defineProps({
@@ -31,15 +32,23 @@ const props = defineProps({
                 >
                     <i class="fas fa-user fa-fw"></i>
                 </a>
-                <a :href="route('discord.auth.login')" class="text-white opacity-50 transition-all duration-300 hover:opacity-100">
+                <a
+                    :href="route('discord.auth.login')"
+                    class="opacity-50 transition-all duration-300 hover:opacity-100"
+                    :class="{
+                        'text-green-500': usePage().props.auth.user?.discord_id,
+                        'text-red-500': !usePage().props.auth.user?.discord_id,
+                    }"
+                    :title="usePage().props.auth.user.discord_id ? 'Your Discord is linked to WHM' : 'Your Discord is not linked to WHM'"
+                >
                     <i class="fab fa-discord fa-fw"></i>
                 </a>
-                <a href="/" class="cursor-not-allowed text-red-500 opacity-25 transition-all duration-300">
+                <!-- <a href="/" class="cursor-not-allowed text-red-500 opacity-25 transition-all duration-300">
                     <i class="fas fa-users fa-fw"></i>
                 </a>
                 <a href="/" class="cursor-not-allowed text-red-500 opacity-25 transition-all duration-300">
                     <i class="fas fa-book fa-fw"></i>
-                </a>
+                </a> -->
             </div>
             <div></div>
         </div>
