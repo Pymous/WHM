@@ -162,10 +162,9 @@ class EveDiscordSyncRoles extends Command
                     }
                 }
 
-                // TODO: RE-ENABLE TO AVOID UNNECESSARY UPDATES
-                // if (!$requireUpdate) {
-                //     continue; // No update needed, skip to the next user
-                // }
+                if (!$requireUpdate) {
+                    continue; // No update needed, skip to the next user
+                }
 
                 // Find the primary character for the member
                 $primaryCharacter = $member['characters']->firstWhere('is_primary', true);
