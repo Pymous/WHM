@@ -52,7 +52,7 @@ class User extends Authenticatable
      */
     public function eveCharacters(): HasMany
     {
-        return $this->hasMany(EveCharacter::class);
+        return $this->hasMany(EveCharacter::class)->orderByDesc('is_primary');
     }
 
     /**
