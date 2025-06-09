@@ -101,11 +101,6 @@ class EveDiscordSyncRoles extends Command
             }
             $user = $character->user; // Get the User associated with the EveCharacter
             if ($user && $user->discord_id) {
-                // Manually add the Member title to every corp member, in case it is not present
-                if (!in_array('Member', $member['titles'])) {
-                    $member['titles'][] = 'Member';
-                }
-
                 // We add the infos to the $members array, using the discord_id as key for easy lookup later in the loop
                 $members[$user->discord_id] = [
                     'user' => $user,
@@ -167,8 +162,16 @@ class EveDiscordSyncRoles extends Command
                     }
                 }
 
-                if (!$requireUpdate) {
-                    continue; // No update needed, skip to the next user
+                // TODO: RE-ENABLE TO AVOID UNNECESSARY UPDATES
+                // if (!$requireUpdate) {
+                //     continue; // No update needed, skip to the next user
+                // }
+
+                // Find the primary character for the member
+                $primaryCharacter = $member['characters']->firstWhere('is_primary', true);
+                $nick = null;
+                if ($primaryCharacter) {
+                    $nick = "[FO2RE] " . $primaryCharacter->name;
                 }
 
                 // And update his Discord user with the new roles
@@ -177,6 +180,7 @@ class EveDiscordSyncRoles extends Command
                     'Authorization' => "Bot {$botToken}",
                 ])->patch($updateUrl, [
                     'roles' => $rolesForMember,
+                    'nick' => $nick,
                 ]);
             }
             // This DiscordUser is not in the corporation
@@ -190,8 +194,8 @@ class EveDiscordSyncRoles extends Command
                     }
                 }
 
-                // If the user has no roles left, we can skip them
-                if (empty($rolesForMember)) {
+                // If the Discord user has the same roles left after filtering, we can skip the update
+                if (count($discordUser['roles']) === count($rolesForMember)) {
                     continue;
                 }
 
@@ -201,6 +205,7 @@ class EveDiscordSyncRoles extends Command
                     'Authorization' => "Bot {$botToken}",
                 ])->patch($updateUrl, [
                     'roles' => $rolesForMember,
+                    'nick' => null
                 ]);
             }
         }
