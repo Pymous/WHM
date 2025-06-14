@@ -82,7 +82,7 @@ const remove = async () => {
                 <span v-if="character.corporation.ticker"> [{{ character.corporation.ticker }}]</span>
             </div>
         </div>
-        <div class="absolute -top-1/12 -right-1/12 -z-10 w-1/3 rotate-12">
+        <div class="absolute -top-1/12 -right-1/12 -z-10 w-1/3 rotate-12 mix-blend-screen">
             <img :src="'https://images.evetech.net/corporations/' + character.corporation.corporation_id + '/logo'" class="w-full opacity-25" />
         </div>
     </div>
