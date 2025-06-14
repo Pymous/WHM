@@ -38,7 +38,7 @@ const remove = async () => {
 </script>
 
 <template>
-    <div class="bg-blur relative flex items-center gap-4 border border-white/25 px-4 py-2">
+    <div class="bg-blur relative flex items-center gap-4 overflow-hidden border border-white/25 px-4 py-2">
         <div
             class="absolute top-0 left-0 flex h-full w-full items-center justify-center gap-4 bg-slate-700/95 opacity-0 transition-opacity duration-300 hover:opacity-100"
         >
@@ -72,9 +72,18 @@ const remove = async () => {
         >
             <img :src="'https://images.evetech.net/characters/' + character.character_id + '/portrait?size=128'" class="w-16 rounded-full" />
         </div>
-        <div class="font-bold">
-            <i v-if="character.is_primary" class="fas fa-crown mr-2 text-yellow-500"></i>
-            {{ character.name }}
+        <div>
+            <div class="font-bold">
+                <i v-if="character.is_primary" class="fas fa-crown mr-2 text-yellow-500"></i>
+                {{ character.name }}
+            </div>
+            <div class="text-xs">
+                <span>{{ character.corporation.name }}</span>
+                <span v-if="character.corporation.ticker"> [{{ character.corporation.ticker }}]</span>
+            </div>
+        </div>
+        <div class="absolute -top-1/12 -right-1/12 -z-10 w-1/3 rotate-12">
+            <img :src="'https://images.evetech.net/corporations/' + character.corporation.corporation_id + '/logo'" class="w-full opacity-25" />
         </div>
     </div>
 </template>

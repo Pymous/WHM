@@ -43,7 +43,7 @@ const sortedEveCharacters = computed(() => {
             </div>
             <!-- TOONS MANAGEMENT -->
             <h2 class="mt-8">MY TOONS</h2>
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-4 max-md:grid-cols-1">
                 <toon-display
                     v-if="sortedEveCharacters?.length > 0"
                     v-for="character in sortedEveCharacters"

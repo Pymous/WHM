@@ -46,24 +46,9 @@ class EsiController extends Controller
         $provider = app(EveOnlineProvider::class);
         $characterData = $provider->getCharacterData($character->character_id);
         if ($characterData) {
-            $character->update([
-                'corporation_id' => $characterData['corporation_id'] ?? null,
-                'public_data' => $characterData,
-            ]);
-
             // Update his corporation data too
             if (isset($characterData['corporation_id'])) {
-                $corporation = $provider->getCorporationData($characterData['corporation_id']);
-                if ($corporation) {
-                    $character->corporation()->updateOrCreate(
-                        ['corporation_id' => $characterData['corporation_id']],
-                        [
-                            'name' => $corporation['name'],
-                            'ticker' => $corporation['ticker'],
-                            'description' => $corporation['description'] ?? null,
-                        ]
-                    );
-                }
+                $provider->getCorporationData($characterData['corporation_id']);
             }
         }
 

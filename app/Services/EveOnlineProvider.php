@@ -6,6 +6,7 @@ use App\Models\User;
 use GuzzleHttp\Client;
 use Illuminate\Support\Str;
 use App\Models\EveCharacter;
+use App\Models\EveCorporation;
 use Illuminate\Support\Facades\Log;
 use App\Jobs\EveCharactersVerifyJob;
 use Illuminate\Support\Facades\Auth;
@@ -331,7 +332,26 @@ class EveOnlineProvider extends ServiceProvider
                 ],
             ]);
 
-            return json_decode($response->getBody()->getContents(), true);
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            // Update or create based on corporation_id
+            EveCorporation::updateOrCreate(
+                ['corporation_id' => $corpId],
+                [
+                    'name' => $data['name'],
+                    'ticker' => $data['ticker'],
+                    'description' => $data['description'] ?? null,
+                    'url' => $data['url'] ?? null,
+                    'ceo_id' => $data['ceo_id'] ?? null,
+                    'creator_id' => $data['creator_id'] ?? null,
+                    'date_founded' => $data['date_founded'] ?? null,
+                    'home_station_id' => $data['home_station_id'] ?? null,
+                    'member_count' => $data['member_count'] ?? 0,
+                    'tax_rate' => $data['tax_rate'] ?? 0.0,
+                    'war_eligible' => $data['war_eligible'] ?? true,
+                ]
+            );
+            return $data;
         } catch (GuzzleException $e) {
             Log::error('Failed to retrieve corporation data', [
                 'error' => $e->getMessage(),
@@ -350,7 +370,18 @@ class EveOnlineProvider extends ServiceProvider
                 ],
             ]);
 
-            return json_decode($response->getBody()->getContents(), true);
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            $character = EveCharacter::where('character_id', $characterId)->first();
+            if ($character) {
+                // Update the character's public data
+                $character->update([
+                    'public_data' => $data,
+                    'corporation_id' => $data['corporation_id'] ?? null,
+                ]);
+            }
+
+            return $data;
         } catch (GuzzleException $e) {
             Log::error('Failed to retrieve character data', [
                 'error' => $e->getMessage(),

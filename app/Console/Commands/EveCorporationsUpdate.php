@@ -49,26 +49,7 @@ class EveCorporationsUpdate extends Command
         foreach ($corporations as $corporation) {
             // Get EveOnlineProvider instance
             $provider = app(EveOnlineProvider::class);
-            $data = $provider->getCorporationData($corporation);
-            if ($data) {
-                // Update or create based on corporation_id
-                EveCorporation::updateOrCreate(
-                    ['corporation_id' => $corporation],
-                    [
-                        'name' => $data['name'],
-                        'ticker' => $data['ticker'],
-                        'description' => $data['description'] ?? null,
-                        'url' => $data['url'] ?? null,
-                        'ceo_id' => $data['ceo_id'] ?? null,
-                        'creator_id' => $data['creator_id'] ?? null,
-                        'date_founded' => $data['date_founded'] ?? null,
-                        'home_station_id' => $data['home_station_id'] ?? null,
-                        'member_count' => $data['member_count'] ?? 0,
-                        'tax_rate' => $data['tax_rate'] ?? 0.0,
-                        'war_eligible' => $data['war_eligible'] ?? true,
-                    ]
-                );
-            }
+            $provider->getCorporationData($corporation);
         }
         $this->info('Corporations update process completed successfully.');
         return Command::SUCCESS;

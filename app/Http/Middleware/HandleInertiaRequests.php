@@ -43,7 +43,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user() ? $request->user()->load('eveCharacters') : null,
+                'user' => $request->user() ? $request->user()->load(['eveCharacters', 'eveCharacters.corporation']) : null,
             ],
             'ziggy' => [
                 ...(new Ziggy)->toArray(),
