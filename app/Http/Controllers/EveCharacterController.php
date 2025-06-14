@@ -36,30 +36,6 @@ class EveCharacterController extends Controller
     }
 
     /**
-     * Handle the callback from EVE Online SSO.
-     */
-    public function callback(Request $request)
-    {
-        if (!$request->has('code') || !$request->has('state')) {
-            return redirect()->route('characters.index')
-                ->with('error', 'Authentication failed. Please try again.');
-        }
-
-        $character = $this->eveOnlineProvider->handleCallback(
-            $request->input('code'),
-            $request->input('state')
-        );
-
-        if (!$character) {
-            return redirect()->route('characters.index')
-                ->with('error', 'Authentication failed. Please try again.');
-        }
-
-        return redirect()->route('characters.index')
-            ->with('success', "Character {$character->name} has been added successfully.");
-    }
-
-    /**
      * Set a character as primary.
      */
     public function setPrimary(EveCharacter $character)
