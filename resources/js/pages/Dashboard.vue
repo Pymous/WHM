@@ -1,7 +1,18 @@
 <script setup>
 import { Head, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const discordID = usePage().props.auth.user.discord_id;
+
+const sortedEveCharacters = computed(() => {
+    const user = usePage().props.auth?.user;
+    const characters = user?.eve_characters || [];
+
+    return [...characters].sort((a, b) => {
+        // Sort by is_primary (true values first)
+        return (b.is_primary || false) - (a.is_primary || false);
+    });
+});
 </script>
 
 <template>
@@ -32,8 +43,8 @@ const discordID = usePage().props.auth.user.discord_id;
             </div>
             <!-- TOONS MANAGEMENT -->
             <h2 class="mt-8">MY TOONS</h2>
-            <div class="grid grid-cols-2 gap-4">
-                <toon-display v-for="character in usePage().props.auth.user.eve_characters" :key="character.character_id" :character="character" />
+            <div class="grid grid-cols-2 gap-4" v-if="usePage().props.auth.user.eve_characters?.length > 0">
+                <toon-display v-for="character in sortedEveCharacters" :key="character.character_id" :character="character" />
                 <!-- ADD NEW CHARACTER -->
                 <a :href="route('esi.auth.login')" class="btn flex items-center gap-4 px-4 py-2">
                     <i class="fas fa-square-plus text-3xl text-white"></i>
@@ -44,8 +55,5 @@ const discordID = usePage().props.auth.user.discord_id;
             <h2>CORP NOTIFICATIONS FEED</h2>
             <alert class="max-w-xs"> Work In Progress </alert>
         </div>
-        <!-- <a :href="route('landing')"> Home </a>
-            <a :href="route('esi.auth.login')"> Login / Add a character </a>
-            <a :href="route('discord.auth.login')"> Login / Discord </a> -->
     </AppLayout>
 </template>
