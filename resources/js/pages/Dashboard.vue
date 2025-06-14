@@ -43,8 +43,13 @@ const sortedEveCharacters = computed(() => {
             </div>
             <!-- TOONS MANAGEMENT -->
             <h2 class="mt-8">MY TOONS</h2>
-            <div class="grid grid-cols-2 gap-4" v-if="usePage().props.auth.user.eve_characters?.length > 0">
-                <toon-display v-for="character in sortedEveCharacters" :key="character.character_id" :character="character" />
+            <div class="grid grid-cols-2 gap-4">
+                <toon-display
+                    v-if="sortedEveCharacters?.length > 0"
+                    v-for="character in sortedEveCharacters"
+                    :key="character.character_id"
+                    :character="character"
+                />
                 <!-- ADD NEW CHARACTER -->
                 <a :href="route('esi.auth.login')" class="btn flex items-center gap-4 px-4 py-2">
                     <i class="fas fa-square-plus text-3xl text-white"></i>
