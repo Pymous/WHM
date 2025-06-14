@@ -322,6 +322,44 @@ class EveOnlineProvider extends ServiceProvider
         }
     }
 
+    public function getCorporationData($corpId): ?array
+    {
+        try {
+            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/", [
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (GuzzleException $e) {
+            Log::error('Failed to retrieve corporation data', [
+                'error' => $e->getMessage(),
+                'corp_id' => $corpId,
+            ]);
+            return null;
+        }
+    }
+
+    public function getCharacterData(int $characterId): ?array
+    {
+        try {
+            $response = $this->client->get("{$this->esiUrl}/latest/characters/{$characterId}/", [
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (GuzzleException $e) {
+            Log::error('Failed to retrieve character data', [
+                'error' => $e->getMessage(),
+                'character_id' => $characterId,
+            ]);
+            return null;
+        }
+    }
+
     public function verify()
     {
         try {

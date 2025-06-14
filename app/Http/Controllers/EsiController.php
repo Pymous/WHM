@@ -40,6 +40,33 @@ class EsiController extends Controller
                 ->with('error', 'Authentication failed. Please try again.');
         }
 
+
+
+        // Update the character in the database, using provider::getCharacterData()
+        $provider = app(EveOnlineProvider::class);
+        $characterData = $provider->getCharacterData($character->character_id);
+        if ($characterData) {
+            $character->update([
+                'corporation_id' => $characterData['corporation_id'] ?? null,
+                'public_data' => $characterData,
+            ]);
+
+            // Update his corporation data too
+            if (isset($characterData['corporation_id'])) {
+                $corporation = $provider->getCorporationData($characterData['corporation_id']);
+                if ($corporation) {
+                    $character->corporation()->updateOrCreate(
+                        ['corporation_id' => $characterData['corporation_id']],
+                        [
+                            'name' => $corporation['name'],
+                            'ticker' => $corporation['ticker'],
+                            'description' => $corporation['description'] ?? null,
+                        ]
+                    );
+                }
+            }
+        }
+
         return redirect()->route('dashboard')
             ->with('success', "Character {$character->name} has been added successfully.");
     }

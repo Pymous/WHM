@@ -21,6 +21,8 @@ class EveCharacter extends Model
         'name',
         'is_primary',
         'is_valid',
+        'public_data',
+        'corporation_id',
         'esi_access_token',
         'esi_refresh_token',
         'esi_expires_at',
@@ -61,5 +63,10 @@ class EveCharacter extends Model
         $this->user->eveCharacters()
             ->where('id', '!=', $this->id)
             ->update(['is_primary' => false]);
+    }
+
+    public function corporation()
+    {
+        return $this->belongsTo(EveCorporation::class, 'corporation_id', 'corporation_id');
     }
 }
