@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <title inertia>{{ config('app.name', 'WHM') }}</title>
+    <link rel="icon" href="{{ asset('img/logo.png') }}" type="image/png">
+
 
     @routes
     @vite(['resources/js/app.js', "resources/js/pages/{$page['component']}.vue"])
