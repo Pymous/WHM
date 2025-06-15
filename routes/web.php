@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\User;
 use Inertia\Inertia;
+use App\Http\Middleware\UserIsAdmin;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EsiController;
 use App\Http\Controllers\EveController;
@@ -13,6 +15,7 @@ Route::get('/', function () {
 Route::get('dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth'])->name('dashboard');
+
 
 // Discord Authentication Routes
 Route::get('/discord/auth/login', [DiscordController::class, 'authLogin'])->name('discord.auth.login');
@@ -28,6 +31,16 @@ Route::get('/esi/corp', [EsiController::class, 'corp'])->name('esi.corp');
 Route::group(['prefix' => 'eve', 'middleware' => ['auth']], function () {
     Route::post('/characters/{character}/make-primary', [EveController::class, 'makePrimary'])->name('eve.characters.make-primary');
     Route::post('/characters/{character}/remove', [EveController::class, 'remove'])->name('eve.characters.remove');
+});
+
+// Admin Routes Example
+Route::group(['prefix' => 'admin', 'middleware' => [UserIsAdmin::class]], function () {
+    Route::get('/users', function () {
+        $users = User::with('eveCharacters')->get();
+        return Inertia::render('admin/Users', [
+            'users' => $users,
+        ]);
+    })->name('admin.users');
 });
 
 require __DIR__ . '/settings.php';
