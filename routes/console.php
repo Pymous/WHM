@@ -7,5 +7,11 @@ use Illuminate\Support\Facades\Schedule;
 
 // Update every Token and Scope for all EVE Characters in the database
 Schedule::command('eve:characters:verify')->everyFifteenMinutes()->withoutOverlapping();
+// Update every EVE Characters and EVE Corporations in the database
 Schedule::command('eve:characters:update')->hourly()->withoutOverlapping();
 Schedule::command('eve:corporations:update')->hourly()->withoutOverlapping();
+// Get all EVE Notifications from all the available directors from the main corporation
+Schedule::command('eve:notifications:get')->everyTwoMinutes()->withoutOverlapping()->after(function () {
+    // After fetching notifications, broadcast them to Discord if needed
+    Artisan::call('eve:notifications:broadcast');
+});

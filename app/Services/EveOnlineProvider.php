@@ -497,8 +497,8 @@ class EveOnlineProvider extends ServiceProvider
 
             // Loop through the roles and find the directors
             foreach ($responseData as $member) {
-                // Check if $member['grantable_roles'] contain "Director" and if so, add it to the $directors array
-                if (in_array('Director', $member['grantable_roles'])) {
+                // Check if $member['roles'] contain "Director" and if so, add it to the $directors array
+                if (in_array('Director', $member['roles'])) {
                     $directors[] = $member['character_id'];
                 }
             }
@@ -551,6 +551,26 @@ class EveOnlineProvider extends ServiceProvider
                     'character_id' => $this->caller->character_id,
                 ]);
             }
+        }
+    }
+
+    public function getNotifications(EveCharacter $character): ?array
+    {
+        try {
+            $response = $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
+                'headers' => [
+                    'Authorization' => "Bearer {$character->esi_access_token}",
+                    'Accept' => 'application/json',
+                ],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (GuzzleException $e) {
+            Log::error('Failed to retrieve notifications', [
+                'error' => $e->getMessage(),
+                'character_id' => $character->character_id,
+            ]);
+            return null;
         }
     }
 }
