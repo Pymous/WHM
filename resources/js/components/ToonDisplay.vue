@@ -77,12 +77,12 @@ const remove = async () => {
                 <i v-if="character.is_primary" class="fas fa-crown mr-2 text-yellow-500"></i>
                 {{ character.name }}
             </div>
-            <div class="text-xs">
+            <div class="text-xs" v-if="character.corporation">
                 <span>{{ character.corporation.name }}</span>
                 <span v-if="character.corporation.ticker"> [{{ character.corporation.ticker }}]</span>
             </div>
         </div>
-        <div class="absolute -top-1/12 -right-1/12 -z-10 w-1/3 rotate-12 mix-blend-screen">
+        <div class="absolute -top-1/12 -right-1/12 -z-10 w-1/3 rotate-12 mix-blend-screen" v-if="character.corporation">
             <img :src="'https://images.evetech.net/corporations/' + character.corporation.corporation_id + '/logo'" class="w-full opacity-25" />
         </div>
     </div>
