@@ -43,16 +43,20 @@ const props = defineProps({
                 >
                     <i class="fab fa-discord fa-fw"></i>
                 </a>
-                <!-- <a href="/" class="cursor-not-allowed text-red-500 opacity-25 transition-all duration-300">
+                <a
+                    v-if="usePage().props.auth.user?.is_admin"
+                    :href="route('admin.users')"
+                    class="text-white opacity-50 transition-all duration-300 hover:opacity-100"
+                    :class="{
+                        'opacity-100': route().current('admin.users'),
+                    }"
+                >
                     <i class="fas fa-users fa-fw"></i>
                 </a>
-                <a href="/" class="cursor-not-allowed text-red-500 opacity-25 transition-all duration-300">
-                    <i class="fas fa-book fa-fw"></i>
-                </a> -->
             </div>
             <div></div>
         </div>
-        <div class="w-full">
+        <div class="h-full w-full overflow-y-auto">
             <h1 v-if="props.title" class="mt-5 p-5 max-md:text-center">{{ props.title }}</h1>
             <div class="main flex w-full flex-grow gap-8 overflow-y-auto p-5 max-md:flex-col">
                 <slot />
