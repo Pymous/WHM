@@ -34,6 +34,7 @@ import { ZiggyVue } from 'ziggy-js';
 import Alert from './components/Alert.vue';
 import AlertManager from './components/AlertManager.vue';
 import ToonDisplay from './components/ToonDisplay.vue';
+import UserDisplay from './components/UserDisplay.vue';
 import AppLayout from './layouts/AppLayout.vue';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -46,6 +47,7 @@ createInertiaApp({
             .component('AppLayout', AppLayout)
             .component('alert', Alert)
             .component('toon-display', ToonDisplay)
+            .component('user-display', UserDisplay)
             .component('alert-manager', AlertManager)
             .use(plugin)
             .use(ZiggyVue)
