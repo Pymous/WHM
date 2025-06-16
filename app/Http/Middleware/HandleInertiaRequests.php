@@ -49,7 +49,9 @@ class HandleInertiaRequests extends Middleware
                 ...(new Ziggy)->toArray(),
                 'location' => $request->url(),
             ],
-            'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'config' => [
+                'main_corp_id' => env('EVE_CORPORATION_ID', null),
+            ]
         ];
     }
 }
