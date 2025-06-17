@@ -13,7 +13,9 @@ class DiscordController extends Controller
     public function authLogin()
     {
 
-        return Socialite::driver('discord')->redirect();
+        return Socialite::driver('discord')
+            ->setScopes(['identify'])
+            ->redirect();
     }
 
     public function authCallback(Request $request)
