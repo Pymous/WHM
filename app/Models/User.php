@@ -23,6 +23,7 @@ class User extends Authenticatable
         'discord_id',
         'discord_data',
         'is_admin',
+        'is_member',
     ];
 
     /**
@@ -47,6 +48,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'is_member' => 'boolean',
         ];
     }
 
