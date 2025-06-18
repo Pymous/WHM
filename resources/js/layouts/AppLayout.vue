@@ -57,8 +57,8 @@ const props = defineProps({
             <div></div>
         </div>
         <div class="h-full w-full overflow-y-auto">
-            <h1 v-if="props.title" class="mt-5 p-5 max-md:text-center">{{ props.title }}</h1>
-            <div class="main flex w-full flex-grow gap-8 overflow-y-auto p-5 max-md:flex-col">
+            <h1 v-if="props.title" class="mt-5 px-5 pt-5 max-md:text-center">{{ props.title }}</h1>
+            <div class="main flex w-full flex-grow flex-col overflow-y-auto p-5">
                 <slot />
             </div>
         </div>
