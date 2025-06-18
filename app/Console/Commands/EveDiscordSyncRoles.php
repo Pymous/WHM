@@ -95,14 +95,25 @@ class EveDiscordSyncRoles extends Command
             if (!$character) {
                 continue; // Skip if no character found
             }
+
             $user = $character->user; // Get the User associated with the EveCharacter
-            if ($user && $user->discord_id) {
-                // We add the infos to the $members array, using the discord_id as key for easy lookup later in the loop
-                $members[$user->discord_id] = [
-                    'user' => $user,
-                    'characters' => $user->eveCharacters,
-                    'titles' => $member['titles'],
-                ];
+            if ($user) {
+                // Check if the user is saved as a corp member yet, and if not, update it
+                if (!$user->is_member) {
+                    $user->is_member = true; // Set the user as a member of the corporation
+                    $user->save(); // Save the user to update the is_member field
+                    Log::info("User {$user->id} ({$user->name}) is now marked as a member of the corporation.");
+                }
+
+                // If the user has a discord_id, we can add him to the $members array for processing
+                if ($user->discord_id) {
+                    // We add the infos to the $members array, using the discord_id as key for easy lookup later in the loop
+                    $members[$user->discord_id] = [
+                        'user' => $user,
+                        'characters' => $user->eveCharacters,
+                        'titles' => $member['titles'],
+                    ];
+                }
             }
         }
 

@@ -6,6 +6,7 @@ use App\Http\Middleware\UserIsAdmin;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\EsiController;
 use App\Http\Controllers\EveController;
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\DiscordController;
 
 Route::get('/', function () {
@@ -33,14 +34,10 @@ Route::group(['prefix' => 'eve', 'middleware' => ['auth']], function () {
     Route::post('/characters/{character}/remove', [EveController::class, 'remove'])->name('eve.characters.remove');
 });
 
-// Admin Routes Example
+// Admin Routes
 Route::group(['prefix' => 'admin', 'middleware' => [UserIsAdmin::class]], function () {
-    Route::get('/users', function () {
-        $users = User::with('eveCharacters')->get();
-        return Inertia::render('admin/Users', [
-            'users' => $users,
-        ]);
-    })->name('admin.users');
+    Route::get('/users', [AdminController::class, 'usersIndex'])->name('admin.users');
+    Route::get('/users/discord/sync', [AdminController::class, 'usersForceDiscordSync'])->name('admin.users.force-discord-sync');
 });
 
 require __DIR__ . '/settings.php';
