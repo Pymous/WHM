@@ -5,6 +5,9 @@ const props = defineProps({
         default: 'info',
     },
 });
+
+// Add emits for close functionality
+const emit = defineEmits(['close']);
 </script>
 
 <template>
@@ -17,6 +20,11 @@ const props = defineProps({
             'border-blue-600 bg-blue-700': type === 'info',
         }"
     >
-        <slot />
+        <div class="flex items-center justify-between">
+            <div><slot /></div>
+            <button @click="emit('close')" class="text-white hover:text-gray-200">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
     </div>
 </template>

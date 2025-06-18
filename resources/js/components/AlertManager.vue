@@ -41,6 +41,9 @@ onMounted(() => {
 onUnmounted(() => {
     window.removeEventListener('show-alert', handleShowAlert);
 });
+
+// Export addAlert for direct use in other components if needed
+defineExpose({ addAlert });
 </script>
 
 <style scoped>

@@ -6,18 +6,21 @@ import axios from 'axios';
 window.axios = axios;
 
 // Add axios response interceptor
-axios.interceptors.response.use(
+window.axios.interceptors.response.use(
     (response) => {
         const data = response.data;
-        if (typeof data === 'object' && data !== null && 'success' in data && data.message) {
-            // Create a global event to trigger the alert
-            const event = new CustomEvent('show-alert', {
-                detail: {
-                    type: data.success ? 'success' : 'error',
-                    message: data.message,
-                },
-            });
-            window.dispatchEvent(event);
+        if (typeof data === 'object' && data !== null) {
+            // Check if response has success property
+            if (data.success !== undefined) {
+                // Create a global event to trigger the alert
+                const event = new CustomEvent('show-alert', {
+                    detail: {
+                        type: 'success',
+                        message: data.success, // Use the success property as the message
+                    },
+                });
+                window.dispatchEvent(event);
+            }
         }
         return response;
     },
