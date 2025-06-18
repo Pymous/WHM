@@ -75,10 +75,6 @@ class EveDiscordSyncRoles extends Command
         // GET EVE DIRECTORS (Array of character_id)
         $eveDirectors = $provider->getCorporationDirectors();
 
-
-
-
-
         // GET EVE MEMBERS
         $eveMembers = $provider->getCorporationMembersTitles();
         if (!$eveMembers) {
@@ -141,15 +137,18 @@ class EveDiscordSyncRoles extends Command
 
                 // Loop through the member's titles and add the corresponding Discord roles
                 foreach ($member['titles'] as $title) {
-                    if (isset($roles[$title])) {
-                        $rolesForMember[] = $roles[$title]; // Add the role ID to the member's roles
+                    // Look in the eveTitles and search for a title with the same id as $title, and store the name
+                    $titleName = collect($eveTitles)->firstWhere('title_id', $title)['name'] ?? null;
+                    // Check if that titleName exists in the Discord $roles array
+                    if (isset($roles[$titleName])) {
+                        $rolesForMember[] = $roles[$titleName]; // Add the role ID to the member's roles
                     }
                 }
 
                 // Make sure we only have unique roles
                 $rolesForMember = array_unique($rolesForMember);
 
-                // Check if $rolesForMember is different from $discurdUser['roles'], if not, we can skip the update
+                // Check if $rolesForMember is different from $discordUser['roles'], if not, we can skip the update
                 $requireUpdate = false;
                 if (count($rolesForMember) !== count($discordUser['roles'])) {
                     $requireUpdate = true; // Different number of roles, update is required
@@ -186,6 +185,14 @@ class EveDiscordSyncRoles extends Command
                     'roles' => $rolesForMember,
                     'nick' => $nick,
                 ]);
+
+                // Loop over each $rolesForMember and call the Discord API to add every role
+                foreach ($rolesForMember as $roleId) {
+                    $addUrl = "{$baseUrl}/guilds/{$guildId}/members/{$discordUser['user']['id']}/roles/{$roleId}";
+                    $addResponse = Http::withHeaders([
+                        'Authorization' => "Bot {$botToken}",
+                    ])->put($addUrl);
+                }
             }
             // This DiscordUser is not in the corporation
             else {
