@@ -38,7 +38,7 @@ class EveDiscordSyncRoles extends Command
         $response = Http::withHeaders([
             'Authorization' => "Bot {$botToken}",
         ])->get($url, [
-            'limit' => 100, // Optional: specify the number of members to retrieve
+            'limit' => 1000, // Optional: specify the number of members to retrieve
         ]);
         $discordUsers = $response->json();
 
@@ -114,6 +114,7 @@ class EveDiscordSyncRoles extends Command
         foreach ($discordUsers as $discordUser) {
             // If that Discord user is in the $members array, it means he is a member of the corp
             if (@$members[$discordUser['user']['id']]) {
+
                 $member = $members[$discordUser['user']['id']];
 
                 // Construct the roles array for the member
@@ -166,12 +167,16 @@ class EveDiscordSyncRoles extends Command
                     continue; // No update needed, skip to the next user
                 }
 
+
                 // Find the primary character for the member
                 $primaryCharacter = $member['characters']->firstWhere('is_primary', true);
                 $nick = null;
                 if ($primaryCharacter) {
                     $nick = "[FO2RE] " . $primaryCharacter->name;
                 }
+
+                // Discord API has a rate limit, so we need to wait a bit before updating the user
+                sleep(1);
 
                 // And update his Discord user with the new roles
                 $updateUrl = "{$baseUrl}/guilds/{$guildId}/members/{$discordUser['user']['id']}";
@@ -197,6 +202,9 @@ class EveDiscordSyncRoles extends Command
                 if (count($discordUser['roles']) === count($rolesForMember)) {
                     continue;
                 }
+
+                // Discord API has a rate limit, so we need to wait a bit before updating the user
+                sleep(1);
 
                 // Otherwise, we can update the Discord user with the remaining roles
                 $updateUrl = "{$baseUrl}/guilds/{$guildId}/members/{$discordUser['user']['id']}";
