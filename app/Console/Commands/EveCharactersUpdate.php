@@ -3,8 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\EveCharacter;
-use Illuminate\Console\Command;
 use App\Models\EveCorporation;
+use Illuminate\Support\Carbon;
+use Illuminate\Console\Command;
 use App\Services\EveOnlineProvider;
 
 class EveCharactersUpdate extends Command
@@ -49,6 +50,13 @@ class EveCharactersUpdate extends Command
                     $this->info('Character updated successfully: ' . $character->name);
                 } else {
                     $this->warn('No data found for character: ' . $character->name);
+                }
+
+                // Check if the $character esi_expires_at is set and if it is expired
+                if ($character->esi_expires_at && $character->esi_expires_at->isPast()) {
+                    $this->warn('Character token expired: ' . $character->name . '. Attempting to refresh token...');
+                    // Refresh it by using the $provider refreshToken()
+                    $provider->refreshToken($character);
                 }
             } catch (\Exception $e) {
                 $this->error('Error updating character: ' . $character->name . '. Error: ' . $e->getMessage());
