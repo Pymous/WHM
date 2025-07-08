@@ -61,6 +61,7 @@ class EveNotificationsBroadcast extends Command
             'TowerAlertMsg',
             'StructureUnderAttack',
             'StructureFuelAlert',
+            'StructureLostShields',
         ];
         $notifications = EveNotification::where(['sender_type' => 'corporation', 'is_broadcasted' => false])->whereIn('type', $filter)->get();
         foreach ($notifications as $notification) {
