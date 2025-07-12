@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\EveUniverse;
+use App\Models\EveCharacter;
 use Illuminate\Database\Eloquent\Model;
 
 class EveNotification extends Model
@@ -45,6 +47,8 @@ class EveNotification extends Model
                 return $this->formatStructureUnderAttack();
             case 'StructureFuelAlert':
                 return $this->formatStructureFuelAlert();
+            case 'StructureLostShields':
+                return $this->formatStructureLostShields();
             default:
                 break;
         }
@@ -201,6 +205,53 @@ class EveNotification extends Model
             'embeds' => [
                 [
                     'title' => $station . ' running VERY low on fuel in ' . $system,
+                    'color' => 16753920,
+                ],
+            ],
+        ];
+    }
+
+    private function formatStructureLostShields()
+    {
+        // {"solarsystemID":31001703,"structureTypeID":35826,"timeLeft":1114218834952,"timestamp":133962970940000000,"vulnerableTime":9000000000}
+
+        $station = EveUniverse::ofType('types')->find($this->text['structureTypeID']);
+        if ($station) {
+            $station = $station->name;
+        } else {
+            $station = "Type ID: {$this->text['structureTypeID']}";
+        }
+
+        // Get the System name from EveUniverse
+        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        if ($system) {
+            $system = "{$system->name}";
+        } else {
+            $system = "{$this->text['solarsystemID']} (System ID not found)";
+        }
+        $system = "**{$system}**";
+
+        // timestamp is a Windows Filetime Timestamp
+        // Convert the Windows Filetime to a Unix timestamp, and make a Carbon instance out of it 
+        // $epochTimestamp = ($this->text['timestamp'] - 116444736000000000) / 10000000;
+        // $carbonTimestamp = \Illuminate\Support\Carbon::createFromTimestamp($epochTimestamp);
+
+
+        // // Do timestamp + timeleft and redo the conversion
+        // $epochTimeleft = ($this->text['timestamp'] + $this->text['timeLeft']) - 116444736000000000;
+        // $epochTimeleft = $epochTimeleft / 10000000;
+        // $carbonTimeleft = \Illuminate\Support\Carbon::createFromTimestamp($epochTimeleft);
+        // $epochVulnerable = ($this->text['timestamp'] + $this->text['vulnerableTime']) - 116444736000000000;
+        // $epochVulnerable = $epochVulnerable / 10000000;
+        // $carbonVulnerable = \Illuminate\Support\Carbon::createFromTimestamp($epochVulnerable);
+
+        // Currently doesn't work because $carbonTimeleft is off by 2 days and some hours, cause unknown
+
+        return [
+            'content' => "@here",
+            'embeds' => [
+                [
+                    'title' => $station . ' just lost their Shields in ' . $system,
                     'color' => 16753920,
                 ],
             ],
