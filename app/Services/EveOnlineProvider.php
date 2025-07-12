@@ -484,6 +484,10 @@ class EveOnlineProvider extends ServiceProvider
 
     public function setCaller(EveCharacter $character): void
     {
+        if (!$character->is_valid) {
+            return;
+        }
+
         $this->caller = $character;
         // Check if the caller token is expired, if yes, refresh it
         if ($this->caller->isTokenExpired()) {
@@ -497,6 +501,10 @@ class EveOnlineProvider extends ServiceProvider
 
     public function getNotifications(EveCharacter $character): ?array
     {
+        if (!$character->is_valid) {
+            return null;
+        }
+
         return $this->handleApiRequest(function () use ($character) {
             return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
                 'headers' => [
@@ -509,6 +517,10 @@ class EveOnlineProvider extends ServiceProvider
 
     public function getSkills(EveCharacter $character): ?array
     {
+        if (!$character->is_valid) {
+            return null;
+        }
+
         return $this->handleApiRequest(function () use ($character) {
             return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/skills/", [
                 'headers' => [
