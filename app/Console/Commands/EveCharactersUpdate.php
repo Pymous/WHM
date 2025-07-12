@@ -43,7 +43,6 @@ class EveCharactersUpdate extends Command
                 if ($data) {
                     $character->update([
                         'name' => $data['name'],
-                        'is_valid' => true,
                         'corporation_id' => $data['corporation_id'] ?? null,
                         'public_data' => $data ?? null,
                     ]);

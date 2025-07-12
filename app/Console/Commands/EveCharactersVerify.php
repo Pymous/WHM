@@ -38,17 +38,18 @@ class EveCharactersVerify extends Command
         Log::info('Found ' . $characters->count() . ' EVE Characters to verify.');
         $jobs = [];
         foreach ($characters as $character) {
+            // The main point is to keep tokens active, and refresh them as needed
             $verification = $provider->request($character, 'GET', '/verify');
-            if ($verification) {
-                $character->update([
-                    'scopes' => $verification['Scopes'],
-                    'is_valid' => true,
-                ]);
-            } else {
-                $character->update([
-                    'is_valid' => false,
-                ]);
-            }
+            // if ($verification) {
+            //     $character->update([
+            //         'scopes' => $verification['Scopes'],
+            //         'is_valid' => true,
+            //     ]);
+            // } else {
+            //     $character->update([
+            //         'is_valid' => false,
+            //     ]);
+            // }
         }
 
         return Command::SUCCESS;

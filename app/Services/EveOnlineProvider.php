@@ -151,6 +151,7 @@ class EveOnlineProvider extends ServiceProvider
             ],
             [
                 'name' => $characterName,
+                'is_valid' => true,
                 'esi_access_token' => $accessToken,
                 'esi_refresh_token' => $refreshToken,
                 'esi_expires_at' => $expiresAt,
