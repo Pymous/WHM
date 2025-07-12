@@ -36,6 +36,7 @@ import { ZiggyVue } from 'ziggy-js';
 
 import Alert from './components/Alert.vue';
 import AlertManager from './components/AlertManager.vue';
+import FittingsUserDisplay from './components/FittingsUserDisplay.vue';
 import ToonDisplay from './components/ToonDisplay.vue';
 import UserDisplay from './components/UserDisplay.vue';
 import AppLayout from './layouts/AppLayout.vue';
@@ -51,6 +52,7 @@ createInertiaApp({
             .component('alert', Alert)
             .component('toon-display', ToonDisplay)
             .component('user-display', UserDisplay)
+            .component('fittings-user-display', FittingsUserDisplay)
             .component('alert-manager', AlertManager)
             .use(plugin)
             .use(ZiggyVue)

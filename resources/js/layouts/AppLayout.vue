@@ -53,6 +53,16 @@ const props = defineProps({
                 >
                     <i class="fas fa-users fa-fw"></i>
                 </a>
+                <a
+                    v-if="usePage().props.auth.user?.is_admin"
+                    :href="route('admin.fittings')"
+                    class="text-white opacity-50 transition-all duration-300 hover:opacity-100"
+                    :class="{
+                        'opacity-100': route().current('admin.fittings'),
+                    }"
+                >
+                    <i class="fas fa-rocket fa-fw"></i>
+                </a>
             </div>
             <div></div>
         </div>
