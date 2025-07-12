@@ -67,6 +67,12 @@ class EveDiscordSyncRoles extends Command
         // GET EVE TITLES
         $eveTitles = $provider->getCorporationTitles();
         $eveTitlesAssoc = collect();
+
+        if (!$eveTitles) {
+            Log::info('No titles found in the corporation, aborting the command.');
+            return Command::FAILURE;
+        }
+
         // Loop on each title
         foreach ($eveTitles as $title) {
             $eveTitlesAssoc->put($title['title_id'], $title['name']);
