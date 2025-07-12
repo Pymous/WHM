@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Schedule;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\ClientException;
 
 class EveOnlineProvider extends ServiceProvider
 {
@@ -201,6 +202,45 @@ class EveOnlineProvider extends ServiceProvider
     }
 
     /**
+     * Helper method to handle API responses and catch specific error codes.
+     */
+    protected function handleApiRequest(callable $requestFunction): ?array
+    {
+        try {
+            $response = $requestFunction();
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (ClientException $e) {
+            $statusCode = $e->getResponse()->getStatusCode();
+
+            if ($statusCode === 401) {
+                // Access the request in $request :
+                $request = $e->getRequest()->getHeader('Authorization');
+                // Remove "Bearer " from the request
+                $token = str_replace('Bearer ', '', $request[0] ?? '');
+
+                // Update the EVECharacter.is_valid at false that hold the $token
+                $character = EveCharacter::where('esi_access_token', $token)->first();
+                if ($character) {
+                    $character->update(['is_valid' => false]);
+                }
+
+                return null;
+            }
+
+            Log::error('EVE ESI API request failed', [
+                'status_code' => $statusCode,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        } catch (GuzzleException $e) {
+            Log::error('EVE ESI API request failed', [
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Make an authenticated request to the ESI API.
      */
     public function request(EveCharacter $character, string $method, string $endpoint, array $options = []): ?array
@@ -211,129 +251,84 @@ class EveOnlineProvider extends ServiceProvider
             }
         }
 
-        try {
-            $response = $this->client->request($method, "{$this->esiUrl}{$endpoint}", array_merge([
+        return $this->handleApiRequest(function () use ($method, $endpoint, $options, $character) {
+            return $this->client->request($method, "{$this->esiUrl}{$endpoint}", array_merge([
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",
                     'Content-Type' => 'application/json',
                 ],
             ], $options));
-
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('ESI API request failed', [
-                'error' => $e->getMessage(),
-                'endpoint' => $endpoint,
-                'character_id' => $character->character_id,
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporation(int $corpId): ?array
     {
-        try {
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/", [
+        return $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/", [
                 'headers' => [
                     'Accept' => 'application/json',
                 ],
             ]);
-
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation details', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporationMembersTitles()
     {
-        try {
-            $corpId = env('EVE_CORPORATION_ID');
-            if (!$corpId) {
-                Log::error('Corporation ID is not set in the environment variables.');
-                return null;
-            }
+        $corpId = env('EVE_CORPORATION_ID');
+        if (!$corpId) {
+            Log::error('Corporation ID is not set in the environment variables.');
+            return null;
+        }
 
-            if (!isset($this->caller)) {
-                Log::error('No caller set for authenticated ESI request.');
-                return null;
-            }
+        if (!isset($this->caller)) {
+            Log::error('No caller set for authenticated ESI request.');
+            return null;
+        }
 
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/members/titles", [
+        return $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/members/titles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
-
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation members', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporationMembersTracking()
     {
+        $corpId = env('EVE_CORPORATION_ID');
+        if (!$corpId) {
+            Log::error('Corporation ID is not set in the environment variables.');
+            return null;
+        }
 
-        try {
-            $corpId = env('EVE_CORPORATION_ID');
-            if (!$corpId) {
-                Log::error('Corporation ID is not set in the environment variables.');
-                return null;
-            }
+        if (!isset($this->caller)) {
+            Log::error('No caller set for authenticated ESI request.');
+            return null;
+        }
 
-            if (!isset($this->caller)) {
-                Log::error('No caller set for authenticated ESI request.');
-                return null;
-            }
-
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/membertracking", [
+        return $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/membertracking", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
-
-            /*
-            Example of Member Tracking Object in the response : 
-            {
-                "character_id": 90875173,
-                "location_id": 60009928,
-                "logoff_date": "2025-06-06T15:43:54Z",
-                "logon_date": "2025-06-06T18:11:48Z",
-                "ship_type_id": 28606,
-                "start_date": "2025-06-04T16:19:00Z"
-            },
-            */
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation members', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporationData($corpId): ?array
     {
-        try {
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/", [
+        $data = $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/", [
                 'headers' => [
                     'Accept' => 'application/json',
                 ],
             ]);
+        });
 
-            $data = json_decode($response->getBody()->getContents(), true);
-
+        if ($data) {
             // Update or create based on corporation_id
             EveCorporation::updateOrCreate(
                 ['corporation_id' => $corpId],
@@ -351,27 +346,22 @@ class EveOnlineProvider extends ServiceProvider
                     'war_eligible' => $data['war_eligible'] ?? true,
                 ]
             );
-            return $data;
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation data', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
-            return null;
         }
+
+        return $data;
     }
 
     public function getCharacterData(int $characterId): ?array
     {
-        try {
-            $response = $this->client->get("{$this->esiUrl}/latest/characters/{$characterId}/", [
+        $data = $this->handleApiRequest(function () use ($characterId) {
+            return $this->client->get("{$this->esiUrl}/latest/characters/{$characterId}/", [
                 'headers' => [
                     'Accept' => 'application/json',
                 ],
             ]);
+        });
 
-            $data = json_decode($response->getBody()->getContents(), true);
-
+        if ($data) {
             $character = EveCharacter::where('character_id', $characterId)->first();
             if ($character) {
                 // Update the character's public data
@@ -380,137 +370,87 @@ class EveOnlineProvider extends ServiceProvider
                     'corporation_id' => $data['corporation_id'] ?? null,
                 ]);
             }
-
-            return $data;
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve character data', [
-                'error' => $e->getMessage(),
-                'character_id' => $characterId,
-            ]);
-            return null;
         }
+
+        return $data;
     }
 
     public function verify()
     {
-        try {
-            $response = $this->client->get("{$this->esiUrl}/verify", [
+        if (!isset($this->caller)) {
+            Log::error('No caller set for authenticated ESI request.');
+            return null;
+        }
+
+        return $this->handleApiRequest(function () {
+            return $this->client->get("{$this->esiUrl}/verify", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
-
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to verify EVE Online character', [
-                'error' => $e->getMessage(),
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporationTitles()
     {
-        try {
-            $corpId = env('EVE_CORPORATION_ID');
-            if (!$corpId) {
-                Log::error('Corporation ID is not set in the environment variables.');
-                return null;
-            }
+        $corpId = env('EVE_CORPORATION_ID');
+        if (!$corpId) {
+            Log::error('Corporation ID is not set in the environment variables.');
+            return null;
+        }
 
-            if (!isset($this->caller)) {
-                Log::error('No caller set for authenticated ESI request.');
-                return null;
-            }
+        if (!isset($this->caller)) {
+            Log::error('No caller set for authenticated ESI request.');
+            return null;
+        }
 
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/titles", [
+        return $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/titles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
-
-            /*
-            Example of Title Object in the response : 
-            {
-                "grantable_roles": [],
-                "grantable_roles_at_base": [],
-                "grantable_roles_at_hq": [],
-                "grantable_roles_at_other": [],
-                "name": "Member",
-                "roles": [],
-                "roles_at_base": [
-                "Hangar_Take_7",
-                "Hangar_Query_7",
-                "Container_Take_7"
-                ],
-                "roles_at_hq": [
-                "Hangar_Take_7",
-                "Hangar_Query_7",
-                "Container_Take_7"
-                ],
-                "roles_at_other": [
-                "Deliveries_Query",
-                "Hangar_Take_7",
-                "Hangar_Query_1",
-                "Hangar_Query_7",
-                "Container_Take_7"
-                ],
-                "title_id": 4
-            },
-            */
-
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation titles', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
-            return null;
-        }
+        });
     }
 
     public function getCorporationDirectors()
     {
-        try {
-            $corpId = env('EVE_CORPORATION_ID');
-            if (!$corpId) {
-                Log::error('Corporation ID is not set in the environment variables.');
-                return null;
-            }
+        $corpId = env('EVE_CORPORATION_ID');
+        if (!$corpId) {
+            Log::error('Corporation ID is not set in the environment variables.');
+            return null;
+        }
 
-            if (!isset($this->caller)) {
-                Log::error('No caller set for authenticated ESI request.');
-                return null;
-            }
+        if (!isset($this->caller)) {
+            Log::error('No caller set for authenticated ESI request.');
+            return null;
+        }
 
-            $response = $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/roles", [
+        $responseData = $this->handleApiRequest(function () use ($corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/roles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
+        });
 
-            $responseData = json_decode($response->getBody()->getContents(), true);
-            $directors = [];
-
-            // Loop through the roles and find the directors
-            foreach ($responseData as $member) {
-                // Check if $member['roles'] contain "Director" and if so, add it to the $directors array
-                if (in_array('Director', $member['roles'])) {
-                    $directors[] = $member['character_id'];
-                }
-            }
-
-            return $directors;
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve corporation directors', [
-                'error' => $e->getMessage(),
-                'corp_id' => $corpId,
-            ]);
+        if (!$responseData) {
             return null;
         }
+
+        $directors = [];
+        // Loop through the roles and find the directors
+        foreach ($responseData as $member) {
+            // Check if $member['roles'] contain "Director" and if so, add it to the $directors array
+            if (in_array('Director', $member['roles'])) {
+                $directors[] = $member['character_id'];
+            }
+        }
+
+        return $directors;
     }
 
     public function getMainCeo(): ?EveCharacter
@@ -556,21 +496,25 @@ class EveOnlineProvider extends ServiceProvider
 
     public function getNotifications(EveCharacter $character): ?array
     {
-        try {
-            $response = $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
+        return $this->handleApiRequest(function () use ($character) {
+            return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
+        });
+    }
 
-            return json_decode($response->getBody()->getContents(), true);
-        } catch (GuzzleException $e) {
-            Log::error('Failed to retrieve notifications', [
-                'error' => $e->getMessage(),
-                'character_id' => $character->character_id,
+    public function getSkills(EveCharacter $character): ?array
+    {
+        return $this->handleApiRequest(function () use ($character) {
+            return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/skills/", [
+                'headers' => [
+                    'Authorization' => "Bearer {$character->esi_access_token}",
+                    'Accept' => 'application/json',
+                ],
             ]);
-            return null;
-        }
+        });
     }
 }
