@@ -515,6 +515,24 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
+    public function getMainStructures(): ?array
+    {
+        $ceo = $this->getMainCeo();
+        if (!$ceo) {
+            Log::error('No main CEO found for the corporation.');
+            return null;
+        }
+
+        return $this->handleApiRequest(function () use ($ceo) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/" . env('EVE_CORPORATION_ID') . "/structures/", [
+                'headers' => [
+                    'Authorization' => "Bearer {$ceo->esi_access_token}",
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        });
+    }
+
     public function getSkills(EveCharacter $character): ?array
     {
         if (!$character->is_valid) {
