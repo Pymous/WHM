@@ -11,8 +11,8 @@ Schedule::command('eve:characters:verify')->everyFifteenMinutes()->withoutOverla
 });
 // Update every EVE Characters and EVE Corporations in the database
 Schedule::command('eve:characters:update')->hourly()->withoutOverlapping();
-// Run the eve:discord:structures-summary command every day at 12pm
-Schedule::command('eve:discord:structures-summary')->dailyAt('12:00')->withoutOverlapping();
+// Run the eve:discord:structures-summary command every week on friday at 10:00
+Schedule::command('eve:discord:structures-summary')->weeklyOn(5, '10:00')->withoutOverlapping();
 // Get all EVE Notifications from all the available directors from the main corporation
 Schedule::command('eve:notifications:get')->everyTwoMinutes()->withoutOverlapping()->after(function () {
     // After fetching notifications, broadcast them to Discord if needed
