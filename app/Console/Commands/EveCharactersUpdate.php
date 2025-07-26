@@ -15,7 +15,7 @@ class EveCharactersUpdate extends Command
      *
      * @var string
      */
-    protected $signature = 'eve:characters:update';
+    protected $signature = 'eve:characters:update {name? : The name of a specific character to update}';
 
     /**
      * The console command description.
@@ -29,23 +29,41 @@ class EveCharactersUpdate extends Command
      */
     public function handle()
     {
-        $characters = \App\Models\EveCharacter::all();
+        $characterName = $this->argument('name');
+
+        if ($characterName) {
+            // Search for a specific character by name
+            $characters = EveCharacter::where('name', 'like', "%{$characterName}%")->get();
+
+            if ($characters->isEmpty()) {
+                $this->error("No character found with name containing: {$characterName}");
+                return Command::FAILURE;
+            }
+
+            $this->info("Found " . $characters->count() . " character(s) matching: {$characterName}");
+        } else {
+            // Get all characters as before
+            $characters = EveCharacter::all();
+
+            if ($characters->isEmpty()) {
+                $this->info('No EVE Characters found.');
+                return Command::SUCCESS;
+            }
+
+            $this->info('Found ' . $characters->count() . ' EVE Characters.');
+        }
+
         if ($characters->isEmpty()) {
             $this->info('No EVE Characters found.');
             return Command::SUCCESS;
         }
-        $this->info('Found ' . $characters->count() . ' EVE Characters.');
+
         $provider = app(EveOnlineProvider::class);
         foreach ($characters as $character) {
             $this->info('Updating character: ' . $character->name);
             try {
                 $data = $provider->getCharacterData($character->character_id);
                 if ($data) {
-                    $character->update([
-                        'name' => $data['name'],
-                        'corporation_id' => $data['corporation_id'] ?? null,
-                        'public_data' => $data ?? null,
-                    ]);
                     $this->info('Character updated successfully: ' . $character->name);
                 } else {
                     $this->warn('No data found for character: ' . $character->name);
