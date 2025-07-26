@@ -374,13 +374,15 @@ class EveOnlineProvider extends ServiceProvider
             if ($character) {
                 // Update the character's public data
                 $character->update([
+                    'name' => $data['name'],
                     'public_data' => $data,
                     'corporation_id' => $data['corporation_id'] ?? null,
                 ]);
             }
+            return $data;
         }
 
-        return $data;
+        return null;
     }
 
     public function verify()
