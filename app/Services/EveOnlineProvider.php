@@ -220,7 +220,7 @@ class EveOnlineProvider extends ServiceProvider
         } catch (ClientException $e) {
             $statusCode = $e->getResponse()->getStatusCode();
 
-            if ($statusCode === 401) {
+            if ($statusCode === 401 || $statusCode === 404) {
                 // Access the request in $request :
                 $request = $e->getRequest()->getHeader('Authorization');
                 // Remove "Bearer " from the request
