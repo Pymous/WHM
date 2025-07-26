@@ -194,6 +194,13 @@ class EveOnlineProvider extends ServiceProvider
 
             return true;
         } catch (GuzzleException $e) {
+            if ($e->getCode() === 400) {
+                // If the refresh token is invalid, mark the character as invalid
+                $character->update(['is_valid' => false]);
+                return false;
+            }
+
+
             Log::error('EVE Online SSO token refresh failed', [
                 'error' => $e->getMessage(),
                 'character_id' => $character->character_id,
