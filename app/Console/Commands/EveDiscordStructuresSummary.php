@@ -105,7 +105,7 @@ class EveDiscordStructuresSummary extends Command
                     [
                         'fields' => [
                             [
-                                'name' => 'Daily Structures Summary',
+                                'name' => 'Structures Summary',
                                 'value' => implode("\n", $structuresStrings),
                                 'inline' => false,
                             ],
