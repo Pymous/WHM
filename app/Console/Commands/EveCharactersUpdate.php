@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\User;
 use App\Models\EveCharacter;
 use App\Models\EveCorporation;
 use Illuminate\Support\Carbon;
@@ -95,6 +96,27 @@ class EveCharactersUpdate extends Command
             }
         }
 
+        // Loop over each User and their character, and check if at least one has a corporation_id from the main corp (env('EVE_CORPORATION_ID'))
+        $mainCorpId = env('EVE_CORPORATION_ID');
+        if ($mainCorpId) {
+            $users = User::with('eveCharacters')->get();
+            foreach ($users as $user) {
+                $hasMainCorpCharacter = $user->eveCharacters->contains(function ($character) use ($mainCorpId) {
+                    return $character->corporation_id == $mainCorpId;
+                });
+
+                if ($hasMainCorpCharacter && !$user->is_member) {
+                    $user->is_member = true;
+                    $user->save();
+                }
+                if (!$hasMainCorpCharacter) {
+                    $user->is_member = false;
+                    $user->save();
+                }
+            }
+        } else {
+            $this->warn('EVE_CORPORATION_ID is not set in the environment variables.');
+        }
 
         $this->info('Characters update process completed successfully.');
         return Command::SUCCESS;
