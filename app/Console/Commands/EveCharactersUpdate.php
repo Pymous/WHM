@@ -59,8 +59,10 @@ class EveCharactersUpdate extends Command
         }
 
         $provider = app(EveOnlineProvider::class);
+        $charactersIds = [];
         foreach ($characters as $character) {
             $this->info('Updating character: ' . $character->name);
+            $charactersIds[] = $character->character_id;
             try {
                 $data = $provider->getCharacterData($character->character_id);
                 if ($data) {
@@ -77,6 +79,19 @@ class EveCharactersUpdate extends Command
                 }
             } catch (\Exception $e) {
                 $this->error('Error updating character: ' . $character->name . '. Error: ' . $e->getMessage());
+            }
+        }
+
+        // Get the charactersIds affiliation
+        $affiliations = $provider->getCharactersAffiliation($charactersIds);
+        if ($affiliations) {
+            foreach ($affiliations as $affiliation) {
+                $character = EveCharacter::where('character_id', $affiliation['character_id'])->first();
+                if ($character) {
+                    $this->info('Updating affiliation for character: ' . $affiliation['character_id']);
+                    $character->corporation_id = $affiliation['corporation_id'] ?? null;
+                    $character->save();
+                }
             }
         }
 
