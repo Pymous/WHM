@@ -24,7 +24,7 @@ const isCorpMember = computed(() => {
         <div>
             <div class="flex items-center gap-1 font-bold">
                 {{ user.name }}
-                <i class="fab fa-discord text-indigo-600" v-if="user.discord_id" title="Discord linked"></i>
+                <i class="fab fa-discord text-indigo-600" v-if="user.discord_id" :title="'Discord linked (' + user.discord_id + ')'"></i>
                 <i class="fas fa-rocket text-emerald-600" v-if="isCorpMember" title="At least one toon in Main Corp"></i>
             </div>
             <div class="text-xs">
