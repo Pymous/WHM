@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\User;
 use App\Models\EveCharacter;
 use App\Models\EveCorporation;
 use Illuminate\Support\Carbon;
@@ -59,8 +60,10 @@ class EveCharactersUpdate extends Command
         }
 
         $provider = app(EveOnlineProvider::class);
+        $charactersIds = [];
         foreach ($characters as $character) {
             $this->info('Updating character: ' . $character->name);
+            $charactersIds[] = $character->character_id;
             try {
                 $data = $provider->getCharacterData($character->character_id);
                 if ($data) {
@@ -80,6 +83,40 @@ class EveCharactersUpdate extends Command
             }
         }
 
+        // Get the charactersIds affiliation
+        $affiliations = $provider->getCharactersAffiliation($charactersIds);
+        if ($affiliations) {
+            foreach ($affiliations as $affiliation) {
+                $character = EveCharacter::where('character_id', $affiliation['character_id'])->first();
+                if ($character) {
+                    $this->info('Updating affiliation for character: ' . $affiliation['character_id']);
+                    $character->corporation_id = $affiliation['corporation_id'] ?? null;
+                    $character->save();
+                }
+            }
+        }
+
+        // Loop over each User and their character, and check if at least one has a corporation_id from the main corp (env('EVE_CORPORATION_ID'))
+        $mainCorpId = env('EVE_CORPORATION_ID');
+        if ($mainCorpId) {
+            $users = User::with('eveCharacters')->get();
+            foreach ($users as $user) {
+                $hasMainCorpCharacter = $user->eveCharacters->contains(function ($character) use ($mainCorpId) {
+                    return $character->corporation_id == $mainCorpId;
+                });
+
+                if ($hasMainCorpCharacter && !$user->is_member) {
+                    $user->is_member = true;
+                    $user->save();
+                }
+                if (!$hasMainCorpCharacter) {
+                    $user->is_member = false;
+                    $user->save();
+                }
+            }
+        } else {
+            $this->warn('EVE_CORPORATION_ID is not set in the environment variables.');
+        }
 
         $this->info('Characters update process completed successfully.');
         return Command::SUCCESS;

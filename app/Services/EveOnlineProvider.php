@@ -385,6 +385,22 @@ class EveOnlineProvider extends ServiceProvider
         return null;
     }
 
+    public function getCharactersAffiliation(array $characterIds): ?array
+    {
+        if (empty($characterIds)) {
+            return null;
+        }
+
+        return $this->handleApiRequest(function () use ($characterIds) {
+            return $this->client->post("{$this->esiUrl}/latest/characters/affiliation/", [
+                'json' => $characterIds,
+                'headers' => [
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        });
+    }
+
     public function verify()
     {
         if (!isset($this->caller)) {
