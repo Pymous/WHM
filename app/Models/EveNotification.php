@@ -49,6 +49,12 @@ class EveNotification extends Model
                 return $this->formatStructureFuelAlert();
             case 'StructureLostShields':
                 return $this->formatStructureLostShields();
+            case 'StructureNoReagentsAlert':
+                return $this->formatStructureNoReagentsAlert();
+            case 'StructureLowReagentsAlert':
+                return $this->formatStructureNoReagentsAlert();
+            case 'CharLeftCorpMsg':
+                return $this->formatCharLeftCorpMsg();
             default:
                 break;
         }
@@ -253,6 +259,91 @@ class EveNotification extends Model
                 [
                     'title' => $station . ' just lost their Shields in ' . $system,
                     'color' => 16753920,
+                ],
+            ],
+        ];
+    }
+
+    private function formatStructureNoReagentsAlert()
+    {
+        // Associate the proper details with EveUniverse data
+        $station = EveUniverse::ofType('types')->find($this->text['structureTypeID']);
+        if ($station) {
+            $station = $station->name;
+        } else {
+            $station = "Type ID: {$this->text['structureTypeID']}";
+        }
+
+        // Get the System name from EveUniverse
+        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        if ($system) {
+            $system = "{$system->name}";
+        } else {
+            $system = "{$this->text['solarsystemID']} (System ID not found)";
+        }
+        $system = "**{$system}**";
+
+        return [
+            'content' => "@here",
+            'embeds' => [
+                [
+                    'title' => $station . ' is out of reagents in ' . $system,
+                    'color' => 16753920,
+                ],
+            ],
+        ];
+    }
+
+    private function formatStructureLowReagentsAlert()
+    {
+        // Associate the proper details with EveUniverse data
+        $station = EveUniverse::ofType('types')->find($this->text['structureTypeID']);
+        if ($station) {
+            $station = $station->name;
+        } else {
+            $station = "Type ID: {$this->text['structureTypeID']}";
+        }
+
+        // Get the System name from EveUniverse
+        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        if ($system) {
+            $system = "{$system->name}";
+        } else {
+            $system = "{$this->text['solarsystemID']} (System ID not found)";
+        }
+        $system = "**{$system}**";
+
+        return [
+            'content' => "@here",
+            'embeds' => [
+                [
+                    'title' => $station . ' is running low on reagents in ' . $system,
+                    'color' => 16753920,
+                ],
+            ],
+        ];
+    }
+
+    private function formatCharLeftCorpMsg()
+    {
+        $charId = $this->text['charID'] ?? null;
+        if (!$charId) {
+            return null;
+        }
+
+        $character = EveCharacter::where('character_id', $charId)->first();
+        if ($character) {
+            $charName = $character ? $character->name : "Character ID: {$charId}";
+        } else {
+            $charName = "Character ID: {$charId}";
+        }
+
+        return [
+            'content' => "@here",
+            'embeds' => [
+                [
+                    'title' => $charName . ' has left the corporation.',
+                    'color' => 3447003,
                 ],
             ],
         ];
