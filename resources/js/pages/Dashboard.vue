@@ -30,8 +30,8 @@ const sortedEveCharacters = computed(() => {
                     <a href="https://help.fo2re.space/" target="_blank" class="btn text-lg uppercase">
                         <i class="fas fa-book mr-4 text-xl"></i> Guides
                     </a>
-                    <a href="https://pf.fo2re.space/" target="_blank" class="btn text-lg uppercase">
-                        <i class="fas fa-rocket mr-4 text-xl"></i> Pathfinder
+                    <a href="https://wanderer.fo2re.space/" target="_blank" class="btn text-lg uppercase">
+                        <i class="fas fa-rocket mr-4 text-xl"></i> Wanderer
                     </a>
                     <a :href="route('discord.auth.login')" class="btn text-lg uppercase"> <i class="fab fa-discord mr-4 text-xl"></i> Discord </a>
                     <a href="https://janice.e-351.com" target="_blank" class="btn text-lg uppercase">
