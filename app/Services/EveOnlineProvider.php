@@ -8,7 +8,6 @@ use Illuminate\Support\Str;
 use App\Models\EveCharacter;
 use App\Models\EveCorporation;
 use Illuminate\Support\Facades\Log;
-use App\Jobs\EveCharactersVerifyJob;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\ServiceProvider;
@@ -220,7 +219,7 @@ class EveOnlineProvider extends ServiceProvider
         } catch (ClientException $e) {
             $statusCode = $e->getResponse()->getStatusCode();
 
-            if ($statusCode === 401 || $statusCode === 404) {
+            if ($statusCode === 401) {
                 // Access the request in $request :
                 $request = $e->getRequest()->getHeader('Authorization');
                 // Remove "Bearer " from the request
@@ -232,6 +231,10 @@ class EveOnlineProvider extends ServiceProvider
                     $character->update(['is_valid' => false]);
                 }
 
+                return null;
+            }
+
+            if ($statusCode === 404) {
                 return null;
             }
 
@@ -409,7 +412,7 @@ class EveOnlineProvider extends ServiceProvider
         }
 
         return $this->handleApiRequest(function () {
-            return $this->client->get("{$this->esiUrl}/verify", [
+            return $this->client->get("{$this->baseUrl}/oauth/verify", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
                     'Accept' => 'application/json',

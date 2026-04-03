@@ -3,9 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
-use App\Jobs\EveCharactersVerifyJob;
 use App\Services\EveOnlineProvider;
 
 class EveCharactersVerify extends Command
@@ -38,24 +36,22 @@ class EveCharactersVerify extends Command
         Log::info('Found ' . $characters->count() . ' EVE Characters to verify.');
         $jobs = [];
         foreach ($characters as $character) {
-            // The main point is to keep tokens active, and refresh them as needed
-            $verification = $provider->request($character, 'GET', '/verify');
-
-            if ($verification) {
-                // Check if the scopes match the expected ones from the .env file
-                $expectedScopes = explode(' ', config('services.eveonline.scopes'));
-                $actualScopes = explode(' ', $verification['Scopes'] ?? '');
-                $isScopesValid = !array_diff($expectedScopes, $actualScopes);
-
-                $character->update([
-                    'scopes' => $verification['Scopes'],
-                    'is_valid' => $isScopesValid,
-                ]);
-            } else {
-                $character->update([
-                    'is_valid' => false,
-                ]);
+            // Refresh token to keep it active
+            if ($character->isTokenExpired()) {
+                if (!$provider->refreshToken($character)) {
+                    $character->update(['is_valid' => false]);
+                    continue;
+                }
             }
+
+            // Check scopes stored on the character against expected scopes
+            $expectedScopes = explode(' ', config('services.eveonline.scopes'));
+            $actualScopes = explode(' ', $character->esi_scopes ?? '');
+            $isScopesValid = !array_diff($expectedScopes, $actualScopes);
+
+            $character->update([
+                'is_valid' => $isScopesValid,
+            ]);
         }
 
         return Command::SUCCESS;
