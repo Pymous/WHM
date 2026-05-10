@@ -543,6 +543,58 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
+    /**
+     * Resolve a list of EVE IDs (type IDs, solar system IDs, etc.) to names
+     * using the public ESI /universe/names/ endpoint.
+     *
+     * NOTE: celestial IDs (planets, moons — 40000000+) are NOT supported by this
+     * endpoint. Use resolveMoonName() for moon IDs.
+     *
+     * Returns a map of [ id => name ]. Unknown IDs are silently omitted.
+     */
+    public function resolveNames(array $ids): array
+    {
+        if (empty($ids)) {
+            return [];
+        }
+
+        // ESI accepts at most 1000 IDs per request.
+        $chunks = array_chunk(array_values(array_unique($ids)), 1000);
+        $map    = [];
+
+        foreach ($chunks as $chunk) {
+            $result = $this->handleApiRequest(function () use ($chunk) {
+                return $this->client->post("{$this->esiUrl}/latest/universe/names/", [
+                    'headers' => ['Accept' => 'application/json', 'Content-Type' => 'application/json'],
+                    'json'    => $chunk,
+                ]);
+            });
+
+            if (is_array($result)) {
+                foreach ($result as $entry) {
+                    $map[(int) $entry['id']] = $entry['name'];
+                }
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Resolve a moon ID to its name via GET /universe/moons/{moon_id}/.
+     * Returns null if the moon is unknown or the request fails.
+     */
+    public function resolveMoonName(int $moonId): ?string
+    {
+        $result = $this->handleApiRequest(function () use ($moonId) {
+            return $this->client->get("{$this->esiUrl}/latest/universe/moons/{$moonId}/", [
+                'headers' => ['Accept' => 'application/json'],
+            ]);
+        });
+
+        return $result['name'] ?? null;
+    }
+
     public function getMainStructures(): ?array
     {
         $ceo = $this->getMainCeo();
@@ -557,6 +609,82 @@ class EveOnlineProvider extends ServiceProvider
                     'Authorization' => "Bearer {$ceo->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
+            ]);
+        });
+    }
+
+    /**
+     * Fetch all corporation POS/starbases across all pages.
+     * Returns an empty array (not null) when none exist.
+     */
+    public function getMainStarbases(): ?array
+    {
+        $ceo = $this->getMainCeo();
+        if (!$ceo) {
+            Log::error('getMainStarbases: no main CEO found for the corporation.');
+            return null;
+        }
+
+        if ($ceo->isTokenExpired()) {
+            if (!$this->refreshToken($ceo)) {
+                Log::error('getMainStarbases: failed to refresh CEO token.');
+                return null;
+            }
+        }
+
+        $corpId  = env('EVE_CORPORATION_ID');
+        $page    = 1;
+        $results = [];
+
+        do {
+            $pageData = $this->handleApiRequest(function () use ($ceo, $corpId, $page) {
+                return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/", [
+                    'headers' => [
+                        'Authorization' => "Bearer {$ceo->esi_access_token}",
+                        'Accept'        => 'application/json',
+                    ],
+                    'query' => ['page' => $page],
+                ]);
+            });
+
+            if ($pageData === null) {
+                break;
+            }
+
+            $results = array_merge($results, $pageData);
+            $page++;
+        } while (count($pageData) >= 1000);
+
+        return $results;
+    }
+
+    /**
+     * Fetch detail for a single starbase, including its fuel bay contents.
+     */
+    public function getMainStarbaseDetail(int $starbaseId, int $systemId): ?array
+    {
+        $ceo = $this->getMainCeo();
+        if (!$ceo) {
+            Log::error('getMainStarbaseDetail: no main CEO found for the corporation.');
+            return null;
+        }
+
+        if ($ceo->isTokenExpired()) {
+            if (!$this->refreshToken($ceo)) {
+                Log::error('getMainStarbaseDetail: failed to refresh CEO token.');
+                return null;
+            }
+        }
+
+        $corpId = env('EVE_CORPORATION_ID');
+
+        return $this->handleApiRequest(function () use ($ceo, $corpId, $starbaseId, $systemId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/{$starbaseId}/", [
+                'headers' => [
+                    'Authorization' => "Bearer {$ceo->esi_access_token}",
+                    'Accept'        => 'application/json',
+                ],
+                'query' => ['system_id' => $systemId],
             ]);
         });
     }
