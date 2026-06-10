@@ -614,6 +614,50 @@ class EveOnlineProvider extends ServiceProvider
     }
 
     /**
+     * Fetch all corporation assets, including structure fuel bays.
+     */
+    public function getMainCorporationAssets(): ?array
+    {
+        $ceo = $this->getMainCeo();
+        if (!$ceo) {
+            Log::error('getMainCorporationAssets: no main CEO found for the corporation.');
+            return null;
+        }
+
+        if ($ceo->isTokenExpired()) {
+            if (!$this->refreshToken($ceo)) {
+                Log::error('getMainCorporationAssets: failed to refresh CEO token.');
+                return null;
+            }
+        }
+
+        $corpId = env('EVE_CORPORATION_ID');
+        $page = 1;
+        $results = [];
+
+        do {
+            $pageData = $this->handleApiRequest(function () use ($ceo, $corpId, $page) {
+                return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/assets/", [
+                    'headers' => [
+                        'Authorization' => "Bearer {$ceo->esi_access_token}",
+                        'Accept' => 'application/json',
+                    ],
+                    'query' => ['page' => $page],
+                ]);
+            });
+
+            if ($pageData === null) {
+                return null;
+            }
+
+            $results = array_merge($results, $pageData);
+            $page++;
+        } while (count($pageData) >= 1000);
+
+        return $results;
+    }
+
+    /**
      * Fetch all corporation POS/starbases across all pages.
      * Returns an empty array (not null) when none exist.
      */

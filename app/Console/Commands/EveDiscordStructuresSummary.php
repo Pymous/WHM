@@ -2,10 +2,11 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Support\Carbon;
-use Illuminate\Console\Command;
+use App\Services\EveMetenoxFuelCalculator;
 use App\Services\EveOnlineProvider;
 use App\Services\EvePosFuelCalculator;
+use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -23,40 +24,46 @@ class EveDiscordStructuresSummary extends Command
      *
      * @var string
      */
-    protected $description = 'Post a weekly fuel-expiry summary for all Upwell structures and online POS to Discord';
+    protected $description = 'Post a weekly fuel-expiry summary for Upwell structures, Metenox drills, and online POS to Discord';
 
     /**
      * Execute the console command.
      */
-    public function handle(EveOnlineProvider $provider, EvePosFuelCalculator $calculator)
-    {
+    public function handle(
+        EveOnlineProvider $provider,
+        EvePosFuelCalculator $calculator,
+        EveMetenoxFuelCalculator $metenoxCalculator
+    ) {
         $this->info('EveDiscordStructuresSummary command started.');
 
         // ── Discord bootstrap ────────────────────────────────────────────────
-        $baseUrl   = 'https://discord.com/api/v10';
-        $botToken  = env('DISCORD_BOT_TOKEN');
-        $guildId   = env('DISCORD_SERVER_ID');
+        $baseUrl = 'https://discord.com/api/v10';
+        $botToken = env('DISCORD_BOT_TOKEN');
+        $guildId = env('DISCORD_SERVER_ID');
         $channelName = env('DISCORD_BROADCAST_CHANNEL');
 
-        if (!$channelName) {
+        if (! $channelName) {
             $this->error('Please set the DISCORD_BROADCAST_CHANNEL environment variable.');
+
             return Command::FAILURE;
         }
 
         $channelsResponse = Http::withHeaders(['Authorization' => "Bot {$botToken}"])
             ->get("{$baseUrl}/guilds/{$guildId}/channels");
 
-        if (!$channelsResponse->successful()) {
-            $this->error("Discord API error fetching channels: HTTP {$channelsResponse->status()} — " . $channelsResponse->body());
+        if (! $channelsResponse->successful()) {
+            $this->error("Discord API error fetching channels: HTTP {$channelsResponse->status()} — ".$channelsResponse->body());
+
             return Command::FAILURE;
         }
 
-        $channels  = collect($channelsResponse->json());
-        $channel   = $channels->firstWhere('name', $channelName);
+        $channels = collect($channelsResponse->json());
+        $channel = $channels->firstWhere('name', $channelName);
 
-        if (!$channel) {
+        if (! $channel) {
             $names = $channels->pluck('name')->filter()->join(', ');
             $this->error("No #{$channelName} channel found. Available channels: {$names}");
+
             return Command::FAILURE;
         }
 
@@ -64,9 +71,49 @@ class EveDiscordStructuresSummary extends Command
 
         // ── Upwell structures ────────────────────────────────────────────────
         $structures = $provider->getMainStructures() ?? [];
+        $drills = array_values(array_filter(
+            $structures,
+            fn (array $structure) => (int) ($structure['type_id'] ?? 0) === EveMetenoxFuelCalculator::STRUCTURE_TYPE_ID
+        ));
+        $corporationAssets = empty($drills) ? [] : $provider->getMainCorporationAssets();
 
         $upwellLines = [];
+        $drillRows = [];
         foreach ($structures as $s) {
+            if ((int) ($s['type_id'] ?? 0) === EveMetenoxFuelCalculator::STRUCTURE_TYPE_ID) {
+                $gasRunway = $metenoxCalculator->calculateMagmaticGasRunway(
+                    (int) $s['structure_id'],
+                    $corporationAssets
+                );
+
+                $fuelExpires = empty($s['fuel_expires'])
+                    ? null
+                    : Carbon::parse($s['fuel_expires']);
+                $gasExpires = $gasRunway['expires_at'];
+
+                $fuelSummary = $fuelExpires
+                    ? "<t:{$fuelExpires->timestamp}:F> (<t:{$fuelExpires->timestamp}:R>)"
+                    : '*unknown*';
+                $gasSummary = $gasExpires
+                    ? "<t:{$gasExpires->timestamp}:F> (<t:{$gasExpires->timestamp}:R>)"
+                    : '*unknown - corporation assets unavailable*';
+                $gasQuantity = $gasRunway['quantity'] === null
+                    ? ''
+                    : " ({$gasRunway['quantity']} units)";
+
+                $drillRows[] = [
+                    'sort_at' => min(
+                        $fuelExpires?->timestamp ?? PHP_INT_MAX,
+                        $gasExpires?->timestamp ?? PHP_INT_MAX
+                    ),
+                    'line' => "**{$s['name']}**\n"
+                        .'Fuel Blocks ('.EveMetenoxFuelCalculator::FUEL_BLOCKS_PER_HOUR."/h): {$fuelSummary}\n"
+                        .'Magmatic Gas'.$gasQuantity.' ('.EveMetenoxFuelCalculator::MAGMATIC_GAS_PER_HOUR."/h): {$gasSummary}",
+                ];
+
+                continue;
+            }
+
             if (empty($s['fuel_expires'])) {
                 continue;
             }
@@ -74,15 +121,17 @@ class EveDiscordStructuresSummary extends Command
             $upwellLines[$ts] = "**{$s['name']}** - <t:{$ts}:F> (<t:{$ts}:R>)";
         }
         ksort($upwellLines);
+        usort($drillRows, fn (array $a, array $b) => $a['sort_at'] <=> $b['sort_at']);
+        $drillLines = array_column($drillRows, 'line');
 
         // ── POS / starbases ──────────────────────────────────────────────────
-        $starbases  = $provider->getMainStarbases() ?? [];
-        $posLines   = [];
+        $starbases = $provider->getMainStarbases() ?? [];
+        $posLines = [];
         $offlinePosLines = [];
         $debug = $this->option('debug');
 
         if ($debug) {
-            $this->line('<info>[DEBUG]</info> getMainStarbases() returned ' . count($starbases) . ' entries.');
+            $this->line('<info>[DEBUG]</info> getMainStarbases() returned '.count($starbases).' entries.');
             if (empty($starbases)) {
                 $this->warn('[DEBUG] No starbases returned — check CEO token has esi-corporations.read_starbases.v1 scope.');
             }
@@ -93,7 +142,7 @@ class EveDiscordStructuresSummary extends Command
         // plus fuel type IDs from online POS detail fetches.
         // Moon IDs (celestials, 40000000+) must be resolved separately.
         $idsToResolve = [];
-        $moonIds      = [];
+        $moonIds = [];
         $starbaseDetails = []; // keyed by starbase_id, pre-fetched below
 
         foreach ($starbases as $pos) {
@@ -123,37 +172,38 @@ class EveDiscordStructuresSummary extends Command
         }
 
         if ($debug) {
-            $this->line('<info>[DEBUG]</info> resolveNames() resolved ' . count($names) . ' IDs.');
+            $this->line('<info>[DEBUG]</info> resolveNames() resolved '.count($names).' IDs.');
         }
 
         foreach ($starbases as $pos) {
             $state = $pos['state'] ?? 'offline';
 
-            $typeId   = (int) $pos['type_id'];
+            $typeId = (int) $pos['type_id'];
             $systemId = (int) $pos['system_id'];
-            $moonId   = isset($pos['moon_id']) ? (int) $pos['moon_id'] : null;
+            $moonId = isset($pos['moon_id']) ? (int) $pos['moon_id'] : null;
 
-            $typeName   = $names[$typeId]   ?? "Type #{$typeId}";
+            $typeName = $names[$typeId] ?? "Type #{$typeId}";
             $systemName = $names[$systemId] ?? "System #{$systemId}";
-            $moonName   = $moonId ? ($names[$moonId] ?? "Moon #{$moonId}") : null;
+            $moonName = $moonId ? ($names[$moonId] ?? "Moon #{$moonId}") : null;
 
             $location = $moonName ?? $systemName;
 
             if ($debug) {
-                $this->line("<info>[DEBUG]</info> POS starbase_id={$pos['starbase_id']} type={$typeName} system={$systemName} moon=" . ($moonName ?? 'n/a') . " state={$state}");
+                $this->line("<info>[DEBUG]</info> POS starbase_id={$pos['starbase_id']} type={$typeName} system={$systemName} moon=".($moonName ?? 'n/a')." state={$state}");
             }
 
             // Non-online POSes have no fuel bay data. List them separately.
             if ($state !== 'online') {
                 $offlinePosLines[] = "**{$typeName}** - {$location} *({$state})*";
+
                 continue;
             }
 
-            $detail  = $starbaseDetails[$pos['starbase_id']] ?? [];
+            $detail = $starbaseDetails[$pos['starbase_id']] ?? [];
             $fuelBay = $detail['fuels'] ?? [];
 
             if ($debug) {
-                $this->line('<info>[DEBUG]</info>   fuel bay entries: ' . count($fuelBay));
+                $this->line('<info>[DEBUG]</info>   fuel bay entries: '.count($fuelBay));
                 foreach ($fuelBay as $f) {
                     $fuelName = $names[(int) $f['type_id']] ?? "Type #{$f['type_id']}";
                     $this->line("<info>[DEBUG]</info>     {$fuelName} (type_id={$f['type_id']}) quantity={$f['quantity']}");
@@ -163,14 +213,15 @@ class EveDiscordStructuresSummary extends Command
             $runway = $calculator->calculateRunway($typeId, $fuelBay);
 
             if ($debug) {
-                $this->line('<info>[DEBUG]</info>   runway: hours_remaining=' . ($runway['hours_remaining'] ?? 'null')
-                    . ' limiting_type=' . ($runway['limiting_fuel_type_id'] ?? 'null')
-                    . ' qty=' . ($runway['limiting_fuel_quantity'] ?? 'null')
-                    . ' rate=' . ($runway['limiting_fuel_consumption_per_hour'] ?? 'null'));
+                $this->line('<info>[DEBUG]</info>   runway: hours_remaining='.($runway['hours_remaining'] ?? 'null')
+                    .' limiting_type='.($runway['limiting_fuel_type_id'] ?? 'null')
+                    .' qty='.($runway['limiting_fuel_quantity'] ?? 'null')
+                    .' rate='.($runway['limiting_fuel_consumption_per_hour'] ?? 'null'));
             }
 
             if ($runway['fuel_expires'] === null) {
                 $posLines[PHP_INT_MAX] = "**{$typeName}** - {$location} - *fuel unknown*";
+
                 continue;
             }
 
@@ -189,28 +240,35 @@ class EveDiscordStructuresSummary extends Command
         ksort($posLines);
 
         if ($debug) {
-            $this->line('<info>[DEBUG]</info> online POS lines: ' . count($posLines));
-            $this->line('<info>[DEBUG]</info> offline POS lines: ' . count($offlinePosLines));
-            $this->line('<info>[DEBUG]</info> upwell lines: ' . count($upwellLines));
+            $this->line('<info>[DEBUG]</info> online POS lines: '.count($posLines));
+            $this->line('<info>[DEBUG]</info> offline POS lines: '.count($offlinePosLines));
+            $this->line('<info>[DEBUG]</info> upwell lines: '.count($upwellLines));
+            $this->line('<info>[DEBUG]</info> Metenox drill lines: '.count($drillLines));
+            if (! empty($drills) && $corporationAssets === null) {
+                $this->warn('[DEBUG] Corporation assets unavailable - check CEO token has esi-assets.read_corporation_assets.v1 scope.');
+            }
             $this->line('<info>[DEBUG]</info> Skipping Discord post in debug mode.');
+
             return Command::SUCCESS;
         }
 
         // ── Build Discord embed ──────────────────────────────────────────────
-        $hasUpwell = !empty($upwellLines);
-        $hasPos    = !empty($posLines) || !empty($offlinePosLines);
+        $hasUpwell = ! empty($upwellLines);
+        $hasDrills = ! empty($drillLines);
+        $hasPos = ! empty($posLines) || ! empty($offlinePosLines);
 
-        if (!$hasUpwell && !$hasPos) {
+        if (! $hasUpwell && ! $hasDrills && ! $hasPos) {
             $message = [
                 'content' => '@here',
-                'embeds'  => [[
-                    'title'       => 'No Structures Found',
+                'embeds' => [[
+                    'title' => 'No Structures Found',
                     'description' => 'There are no structures to report at this time. Check CEO authentication.',
-                    'color'       => 15158332,
+                    'color' => 15158332,
                 ]],
             ];
 
             $this->sendToDiscord($messageUrl, $botToken, $message);
+
             return Command::SUCCESS;
         }
 
@@ -218,24 +276,32 @@ class EveDiscordStructuresSummary extends Command
 
         if ($hasUpwell) {
             $fields[] = [
-                'name'   => 'Upwell Structures',
-                'value'  => $this->splitToFieldValue($upwellLines),
+                'name' => 'Upwell Structures',
+                'value' => $this->splitToFieldValue($upwellLines),
                 'inline' => false,
             ];
         }
 
-        if (!empty($posLines)) {
+        if ($hasDrills) {
             $fields[] = [
-                'name'   => 'POS Fuel (online)',
-                'value'  => $this->splitToFieldValue($posLines),
+                'name' => 'Metenox Moon Drills',
+                'value' => $this->splitToFieldValue($drillLines),
                 'inline' => false,
             ];
         }
 
-        if (!empty($offlinePosLines)) {
+        if (! empty($posLines)) {
             $fields[] = [
-                'name'   => 'POS (not online)',
-                'value'  => $this->splitToFieldValue($offlinePosLines),
+                'name' => 'POS Fuel (online)',
+                'value' => $this->splitToFieldValue($posLines),
+                'inline' => false,
+            ];
+        }
+
+        if (! empty($offlinePosLines)) {
+            $fields[] = [
+                'name' => 'POS (not online)',
+                'value' => $this->splitToFieldValue($offlinePosLines),
                 'inline' => false,
             ];
         }
@@ -243,7 +309,7 @@ class EveDiscordStructuresSummary extends Command
         $message = [
             'embeds' => [[
                 'fields' => $fields,
-                'color'  => 3447003,
+                'color' => 3447003,
             ]],
         ];
 
@@ -265,7 +331,8 @@ class EveDiscordStructuresSummary extends Command
         }
 
         // Truncate gracefully.
-        $truncated = substr($value, 0, 1020) . "\n…";
+        $truncated = substr($value, 0, 1020)."\n…";
+
         return $truncated;
     }
 
@@ -276,13 +343,13 @@ class EveDiscordStructuresSummary extends Command
     {
         $response = Http::withHeaders([
             'Authorization' => "Bot {$botToken}",
-            'Content-Type'  => 'application/json',
+            'Content-Type' => 'application/json',
         ])->post($url, $message);
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('EveDiscordStructuresSummary: Discord API error', [
                 'status' => $response->status(),
-                'body'   => $response->body(),
+                'body' => $response->body(),
             ]);
             $this->error("Discord returned HTTP {$response->status()}: {$response->body()}");
         }
