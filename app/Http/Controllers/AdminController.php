@@ -28,6 +28,22 @@ class AdminController extends Controller
             'success' => 'Discord roles sync initiated successfully.',
         ]);
     }
+
+    public function usersMakePrimary(User $user, EveCharacter $eveCharacter)
+    {
+        abort_unless($eveCharacter->user_id === $user->id, 404);
+
+        $eveCharacter->makePrimary();
+
+        return response()->json([
+            'success' => true,
+            'message' => __(':name is now the primary character for :user.', [
+                'name' => $eveCharacter->name,
+                'user' => $user->name,
+            ]),
+        ]);
+    }
+
     public function fittingsIndex()
     {
         $users = User::with('eveCharacters')->get();

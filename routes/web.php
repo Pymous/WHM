@@ -41,6 +41,8 @@ Route::group(['prefix' => 'eve', 'middleware' => ['auth']], function () {
 Route::group(['prefix' => 'admin', 'middleware' => [UserIsAdmin::class]], function () {
     Route::get('/users', [AdminController::class, 'usersIndex'])->name('admin.users');
     Route::get('/users/discord/sync', [AdminController::class, 'usersForceDiscordSync'])->name('admin.users.force-discord-sync');
+    Route::patch('/users/{user}/characters/{eveCharacter}/make-primary', [AdminController::class, 'usersMakePrimary'])
+        ->name('admin.users.characters.make-primary');
     Route::get('/fittings', [AdminController::class, 'fittingsIndex'])->name('admin.fittings');
     Route::post('/fittings', [AdminController::class, 'fittingsConvertSkillPlan'])->name('admin.fittings.convert');
     Route::post('/fittings/check/{eveCharacter}', [AdminController::class, 'fittingsCheck'])->name('admin.fittings.check');
