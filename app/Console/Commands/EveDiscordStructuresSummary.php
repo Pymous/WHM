@@ -77,7 +77,7 @@ class EveDiscordStructuresSummary extends Command
         ));
         $corporationAssets = empty($drills) ? [] : $provider->getMainCorporationAssets();
 
-        $upwellLines = [];
+        $upwellRows = [];
         $drillRows = [];
         foreach ($structures as $s) {
             if ((int) ($s['type_id'] ?? 0) === EveMetenoxFuelCalculator::STRUCTURE_TYPE_ID) {
@@ -92,14 +92,14 @@ class EveDiscordStructuresSummary extends Command
                 $gasExpires = $gasRunway['expires_at'];
 
                 $fuelSummary = $fuelExpires
-                    ? "<t:{$fuelExpires->timestamp}:F> (<t:{$fuelExpires->timestamp}:R>)"
+                    ? "<t:{$fuelExpires->timestamp}:F>"
                     : '*unknown*';
                 $gasSummary = $gasExpires
-                    ? "<t:{$gasExpires->timestamp}:F> (<t:{$gasExpires->timestamp}:R>)"
+                    ? "<t:{$gasExpires->timestamp}:F>"
                     : '*unknown - corporation assets unavailable*';
                 $gasQuantity = $gasRunway['quantity'] === null
                     ? ''
-                    : " ({$gasRunway['quantity']} units)";
+                    : ' · '.number_format($gasRunway['quantity']);
 
                 $drillRows[] = [
                     'sort_at' => min(
@@ -107,8 +107,8 @@ class EveDiscordStructuresSummary extends Command
                         $gasExpires?->timestamp ?? PHP_INT_MAX
                     ),
                     'line' => "**{$s['name']}**\n"
-                        .'Fuel Blocks ('.EveMetenoxFuelCalculator::FUEL_BLOCKS_PER_HOUR."/h): {$fuelSummary}\n"
-                        .'Magmatic Gas'.$gasQuantity.' ('.EveMetenoxFuelCalculator::MAGMATIC_GAS_PER_HOUR."/h): {$gasSummary}",
+                        ."⛽ Fuel · {$fuelSummary}\n"
+                        ."🌋 Magma{$gasQuantity} · {$gasSummary}",
                 ];
 
                 continue;
@@ -118,15 +118,19 @@ class EveDiscordStructuresSummary extends Command
                 continue;
             }
             $ts = Carbon::parse($s['fuel_expires'])->timestamp;
-            $upwellLines[$ts] = "**{$s['name']}** - <t:{$ts}:F> (<t:{$ts}:R>)";
+            $upwellRows[] = [
+                'sort_at' => $ts,
+                'line' => "**{$s['name']}** - <t:{$ts}:F>",
+            ];
         }
-        ksort($upwellLines);
-        usort($drillRows, fn (array $a, array $b) => $a['sort_at'] <=> $b['sort_at']);
+        $this->sortExpiryRows($upwellRows);
+        $this->sortExpiryRows($drillRows);
+        $upwellLines = array_column($upwellRows, 'line');
         $drillLines = array_column($drillRows, 'line');
 
         // ── POS / starbases ──────────────────────────────────────────────────
         $starbases = $provider->getMainStarbases() ?? [];
-        $posLines = [];
+        $posRows = [];
         $offlinePosLines = [];
         $debug = $this->option('debug');
 
@@ -220,7 +224,10 @@ class EveDiscordStructuresSummary extends Command
             }
 
             if ($runway['fuel_expires'] === null) {
-                $posLines[PHP_INT_MAX] = "**{$typeName}** - {$location} - *fuel unknown*";
+                $posRows[] = [
+                    'sort_at' => PHP_INT_MAX,
+                    'line' => "**{$typeName}** - {$location} - *fuel unknown*",
+                ];
 
                 continue;
             }
@@ -235,9 +242,14 @@ class EveDiscordStructuresSummary extends Command
                 ? " - {$runway['limiting_fuel_quantity']} {$limitingName} @ {$runway['limiting_fuel_consumption_per_hour']}/h"
                 : '';
 
-            $posLines[$ts] = "**{$typeName}** - {$location} - <t:{$ts}:F> (<t:{$ts}:R>){$detail_str}";
+            $posRows[] = [
+                'sort_at' => $ts,
+                'line' => "**{$typeName}** - {$location} - <t:{$ts}:F>{$detail_str}",
+            ];
         }
-        ksort($posLines);
+        $this->sortExpiryRows($posRows);
+        $posLines = array_column($posRows, 'line');
+        sort($offlinePosLines, SORT_NATURAL | SORT_FLAG_CASE);
 
         if ($debug) {
             $this->line('<info>[DEBUG]</info> online POS lines: '.count($posLines));
@@ -276,7 +288,7 @@ class EveDiscordStructuresSummary extends Command
 
         if ($hasUpwell) {
             $fields[] = [
-                'name' => 'Upwell Structures',
+                'name' => '🏠 Upwell Structures',
                 'value' => $this->splitToFieldValue($upwellLines),
                 'inline' => false,
             ];
@@ -284,7 +296,8 @@ class EveDiscordStructuresSummary extends Command
 
         if ($hasDrills) {
             $fields[] = [
-                'name' => 'Metenox Moon Drills',
+                'name' => '⛏️ Metenox Drills · ⛽ '.EveMetenoxFuelCalculator::FUEL_BLOCKS_PER_HOUR
+                    .'/h · 🌋 '.EveMetenoxFuelCalculator::MAGMATIC_GAS_PER_HOUR.'/h',
                 'value' => $this->splitToFieldValue($drillLines),
                 'inline' => false,
             ];
@@ -292,7 +305,7 @@ class EveDiscordStructuresSummary extends Command
 
         if (! empty($posLines)) {
             $fields[] = [
-                'name' => 'POS Fuel (online)',
+                'name' => '🔵 POS',
                 'value' => $this->splitToFieldValue($posLines),
                 'inline' => false,
             ];
@@ -300,7 +313,7 @@ class EveDiscordStructuresSummary extends Command
 
         if (! empty($offlinePosLines)) {
             $fields[] = [
-                'name' => 'POS (not online)',
+                'name' => '🔵 POS (not online)',
                 'value' => $this->splitToFieldValue($offlinePosLines),
                 'inline' => false,
             ];
@@ -334,6 +347,20 @@ class EveDiscordStructuresSummary extends Command
         $truncated = substr($value, 0, 1020)."\n…";
 
         return $truncated;
+    }
+
+    /**
+     * Sort display rows from the soonest expiry to the furthest.
+     */
+    private function sortExpiryRows(array &$rows): void
+    {
+        usort($rows, function (array $a, array $b): int {
+            $expiryComparison = $a['sort_at'] <=> $b['sort_at'];
+
+            return $expiryComparison !== 0
+                ? $expiryComparison
+                : strnatcasecmp($a['line'], $b['line']);
+        });
     }
 
     /**
