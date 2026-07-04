@@ -65,14 +65,23 @@ const makePrimary = async (character) => {
                 type="button"
                 class="group relative rounded-full border-3 p-1 transition"
                 :class="{
-                    'border-green-500/50': character.is_valid,
+                    'border-green-500/50': character.is_valid && character.has_required_scopes,
+                    'border-amber-500/50': character.is_valid && !character.has_required_scopes,
                     'border-red-500/50': !character.is_valid,
                     'cursor-default ring-2 ring-yellow-500/70': character.is_primary,
                     'hover:border-yellow-500 hover:ring-2 hover:ring-yellow-500/40': !character.is_primary,
                     'pointer-events-none opacity-60': changingPrimaryId !== null,
                 }"
                 :disabled="character.is_primary || changingPrimaryId !== null"
-                :title="character.is_primary ? `${character.name} (Primary)` : `Make ${character.name} primary`"
+                :title="
+                    !character.is_valid
+                        ? `${character.name}: EVE authorization is invalid`
+                        : !character.has_required_scopes
+                          ? `${character.name}: authorization is valid but missing required scopes`
+                          : character.is_primary
+                            ? `${character.name} (Primary)`
+                            : `Make ${character.name} primary`
+                "
                 :aria-label="character.is_primary ? `${character.name} is the primary character` : `Make ${character.name} the primary character`"
                 @click="makePrimary(character)"
             >

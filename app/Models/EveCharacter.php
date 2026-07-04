@@ -21,6 +21,7 @@ class EveCharacter extends Model
         'name',
         'is_primary',
         'is_valid',
+        'has_required_scopes',
         'public_data',
         'corporation_id',
         'esi_access_token',
@@ -37,6 +38,7 @@ class EveCharacter extends Model
     protected $casts = [
         'is_primary' => 'boolean',
         'is_valid' => 'boolean',
+        'has_required_scopes' => 'boolean',
         'esi_expires_at' => 'datetime',
     ];
 
@@ -53,7 +55,7 @@ class EveCharacter extends Model
      */
     public function isTokenExpired(): bool
     {
-        return !$this->esi_expires_at || $this->esi_expires_at->isPast();
+        return ! $this->esi_expires_at || $this->esi_expires_at->isPast();
     }
 
     public function makePrimary()

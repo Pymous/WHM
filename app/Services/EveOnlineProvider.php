@@ -2,32 +2,38 @@
 
 namespace App\Services;
 
-use App\Models\User;
-use GuzzleHttp\Client;
-use Illuminate\Support\Str;
 use App\Models\EveCharacter;
 use App\Models\EveCorporation;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Schedule;
-use GuzzleHttp\Exception\GuzzleException;
+use App\Models\User;
+use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class EveOnlineProvider extends ServiceProvider
 {
     protected Client $client;
+
     protected string $clientId;
+
     protected string $clientSecret;
+
     protected string $redirectUri;
+
     protected string $baseUrl = 'https://login.eveonline.com';
+
     protected string $esiUrl = 'https://esi.evetech.net';
+
     protected EveCharacter $caller;
 
     public function __construct()
     {
-        $this->client = new Client();
+        $this->client = new Client;
         $this->clientId = config('services.eveonline.client_id');
         $this->clientSecret = config('services.eveonline.client_secret');
         $this->redirectUri = config('services.eveonline.redirect');
@@ -59,6 +65,7 @@ class EveOnlineProvider extends ServiceProvider
     {
         if ($state !== session('eve_state')) {
             Log::error('EVE Online SSO state mismatch');
+
             return null;
         }
 
@@ -66,7 +73,7 @@ class EveOnlineProvider extends ServiceProvider
             $response = $this->client->post("{$this->baseUrl}/v2/oauth/token", [
                 'headers' => [
                     'Content-Type' => 'application/x-www-form-urlencoded',
-                    'Authorization' => 'Basic ' . base64_encode("{$this->clientId}:{$this->clientSecret}"),
+                    'Authorization' => 'Basic '.base64_encode("{$this->clientId}:{$this->clientSecret}"),
                 ],
                 'form_params' => [
                     'grant_type' => 'authorization_code',
@@ -77,7 +84,7 @@ class EveOnlineProvider extends ServiceProvider
             $tokenData = json_decode($response->getBody()->getContents(), true);
             $characterData = $this->verifyToken($tokenData['access_token']);
 
-            if (!$characterData) {
+            if (! $characterData) {
                 return null;
             }
 
@@ -94,6 +101,7 @@ class EveOnlineProvider extends ServiceProvider
             Log::error('EVE Online SSO token request failed', [
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -115,6 +123,7 @@ class EveOnlineProvider extends ServiceProvider
             Log::error('EVE Online SSO token verification failed', [
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -131,7 +140,7 @@ class EveOnlineProvider extends ServiceProvider
         }
 
         // Check if we have a $user, if not, we have null and we need to create one
-        if (!$user) {
+        if (! $user) {
             $user = User::updateOrCreate([
                 'name' => $characterName,
             ]);
@@ -151,6 +160,7 @@ class EveOnlineProvider extends ServiceProvider
             [
                 'name' => $characterName,
                 'is_valid' => true,
+                'has_required_scopes' => $this->hasRequiredScopes($scopes),
                 'esi_access_token' => $accessToken,
                 'esi_refresh_token' => $refreshToken,
                 'esi_expires_at' => $expiresAt,
@@ -175,7 +185,7 @@ class EveOnlineProvider extends ServiceProvider
             $response = $this->client->post("{$this->baseUrl}/v2/oauth/token", [
                 'headers' => [
                     'Content-Type' => 'application/x-www-form-urlencoded',
-                    'Authorization' => 'Basic ' . base64_encode("{$this->clientId}:{$this->clientSecret}"),
+                    'Authorization' => 'Basic '.base64_encode("{$this->clientId}:{$this->clientSecret}"),
                 ],
                 'form_params' => [
                     'grant_type' => 'refresh_token',
@@ -189,49 +199,90 @@ class EveOnlineProvider extends ServiceProvider
                 'esi_access_token' => $tokenData['access_token'],
                 'esi_refresh_token' => $tokenData['refresh_token'] ?? $character->esi_refresh_token,
                 'esi_expires_at' => now()->addSeconds($tokenData['expires_in']),
+                'is_valid' => true,
             ]);
 
             return true;
         } catch (GuzzleException $e) {
-            if ($e->getCode() === 400) {
-                // If the refresh token is invalid, mark the character as invalid
+            $oauthError = $this->getOAuthError($e);
+
+            if (in_array($oauthError, ['invalid_grant', 'invalid_token'], true)) {
                 $character->update(['is_valid' => false]);
+
+                Log::warning('EVE Online refresh token was permanently rejected', [
+                    'character_id' => $character->character_id,
+                    'oauth_error' => $oauthError,
+                ]);
+
                 return false;
             }
-
 
             Log::error('EVE Online SSO token refresh failed', [
                 'error' => $e->getMessage(),
                 'character_id' => $character->character_id,
+                'status_code' => $e instanceof RequestException && $e->hasResponse()
+                    ? $e->getResponse()->getStatusCode()
+                    : null,
+                'oauth_error' => $oauthError,
             ]);
+
             return false;
         }
     }
 
     /**
+     * Determine whether the character granted every scope currently required by the app.
+     */
+    public function hasRequiredScopes(?string $actualScopes): bool
+    {
+        $normalize = static function (?string $scopes): array {
+            if (! $scopes) {
+                return [];
+            }
+
+            return array_values(array_unique(array_filter(
+                preg_split('/[\s,]+/', trim($scopes)) ?: []
+            )));
+        };
+
+        $expected = $normalize(config('services.eveonline.scopes'));
+        $actual = $normalize($actualScopes);
+
+        return array_diff($expected, $actual) === [];
+    }
+
+    protected function getOAuthError(GuzzleException $exception): ?string
+    {
+        if (! $exception instanceof RequestException || ! $exception->hasResponse()) {
+            return null;
+        }
+
+        $data = json_decode((string) $exception->getResponse()->getBody(), true);
+
+        return is_array($data) && is_string($data['error'] ?? null)
+            ? $data['error']
+            : null;
+    }
+
+    /**
      * Helper method to handle API responses and catch specific error codes.
      */
-    protected function handleApiRequest(callable $requestFunction): ?array
-    {
+    protected function handleApiRequest(
+        callable $requestFunction,
+        ?EveCharacter $character = null,
+        bool $retryOnUnauthorized = true
+    ): ?array {
         try {
             $response = $requestFunction();
+
             return json_decode($response->getBody()->getContents(), true);
         } catch (ClientException $e) {
             $statusCode = $e->getResponse()->getStatusCode();
 
-            if ($statusCode === 401) {
-                // Access the request in $request :
-                $request = $e->getRequest()->getHeader('Authorization');
-                // Remove "Bearer " from the request
-                $token = str_replace('Bearer ', '', $request[0] ?? '');
-
-                // Update the EVECharacter.is_valid at false that hold the $token
-                $character = EveCharacter::where('esi_access_token', $token)->first();
-                if ($character) {
-                    $character->update(['is_valid' => false]);
+            if ($statusCode === 401 && $character && $retryOnUnauthorized) {
+                if ($this->refreshToken($character)) {
+                    return $this->handleApiRequest($requestFunction, $character, false);
                 }
-
-                return null;
             }
 
             if ($statusCode === 404) {
@@ -241,14 +292,33 @@ class EveOnlineProvider extends ServiceProvider
             Log::error('EVE ESI API request failed', [
                 'status_code' => $statusCode,
                 'error' => $e->getMessage(),
+                'character_id' => $character?->character_id,
             ]);
+
             return null;
         } catch (GuzzleException $e) {
             Log::error('EVE ESI API request failed', [
                 'error' => $e->getMessage(),
+                'character_id' => $character?->character_id,
             ]);
+
             return null;
         }
+    }
+
+    protected function handleAuthenticatedApiRequest(
+        EveCharacter $character,
+        callable $requestFunction
+    ): ?array {
+        if (! $character->is_valid) {
+            return null;
+        }
+
+        if ($character->isTokenExpired() && ! $this->refreshToken($character)) {
+            return null;
+        }
+
+        return $this->handleApiRequest($requestFunction, $character);
     }
 
     /**
@@ -256,13 +326,7 @@ class EveOnlineProvider extends ServiceProvider
      */
     public function request(EveCharacter $character, string $method, string $endpoint, array $options = []): ?array
     {
-        if ($character->isTokenExpired()) {
-            if (!$this->refreshToken($character)) {
-                return null;
-            }
-        }
-
-        return $this->handleApiRequest(function () use ($method, $endpoint, $options, $character) {
+        return $this->handleAuthenticatedApiRequest($character, function () use ($method, $endpoint, $options, $character) {
             return $this->client->request($method, "{$this->esiUrl}{$endpoint}", array_merge([
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",
@@ -286,17 +350,19 @@ class EveOnlineProvider extends ServiceProvider
     public function getCorporationMembersTitles()
     {
         $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        if (! $corpId) {
             Log::error('Corporation ID is not set in the environment variables.');
+
             return null;
         }
 
-        if (!isset($this->caller)) {
+        if (! isset($this->caller)) {
             Log::error('No caller set for authenticated ESI request.');
+
             return null;
         }
 
-        return $this->handleApiRequest(function () use ($corpId) {
+        return $this->handleAuthenticatedApiRequest($this->caller, function () use ($corpId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/members/titles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
@@ -309,17 +375,19 @@ class EveOnlineProvider extends ServiceProvider
     public function getCorporationMembersTracking()
     {
         $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        if (! $corpId) {
             Log::error('Corporation ID is not set in the environment variables.');
+
             return null;
         }
 
-        if (!isset($this->caller)) {
+        if (! isset($this->caller)) {
             Log::error('No caller set for authenticated ESI request.');
+
             return null;
         }
 
-        return $this->handleApiRequest(function () use ($corpId) {
+        return $this->handleAuthenticatedApiRequest($this->caller, function () use ($corpId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/membertracking", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
@@ -382,6 +450,7 @@ class EveOnlineProvider extends ServiceProvider
                     'corporation_id' => $data['corporation_id'] ?? null,
                 ]);
             }
+
             return $data;
         }
 
@@ -406,12 +475,13 @@ class EveOnlineProvider extends ServiceProvider
 
     public function verify()
     {
-        if (!isset($this->caller)) {
+        if (! isset($this->caller)) {
             Log::error('No caller set for authenticated ESI request.');
+
             return null;
         }
 
-        return $this->handleApiRequest(function () {
+        return $this->handleAuthenticatedApiRequest($this->caller, function () {
             return $this->client->get("{$this->baseUrl}/oauth/verify", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
@@ -424,17 +494,19 @@ class EveOnlineProvider extends ServiceProvider
     public function getCorporationTitles()
     {
         $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        if (! $corpId) {
             Log::error('Corporation ID is not set in the environment variables.');
+
             return null;
         }
 
-        if (!isset($this->caller)) {
+        if (! isset($this->caller)) {
             Log::error('No caller set for authenticated ESI request.');
+
             return null;
         }
 
-        return $this->handleApiRequest(function () use ($corpId) {
+        return $this->handleAuthenticatedApiRequest($this->caller, function () use ($corpId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/titles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
@@ -447,17 +519,19 @@ class EveOnlineProvider extends ServiceProvider
     public function getCorporationDirectors()
     {
         $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        if (! $corpId) {
             Log::error('Corporation ID is not set in the environment variables.');
+
             return null;
         }
 
-        if (!isset($this->caller)) {
+        if (! isset($this->caller)) {
             Log::error('No caller set for authenticated ESI request.');
+
             return null;
         }
 
-        $responseData = $this->handleApiRequest(function () use ($corpId) {
+        $responseData = $this->handleAuthenticatedApiRequest($this->caller, function () use ($corpId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/roles", [
                 'headers' => [
                     'Authorization' => "Bearer {$this->caller->esi_access_token}",
@@ -466,7 +540,7 @@ class EveOnlineProvider extends ServiceProvider
             ]);
         });
 
-        if (!$responseData) {
+        if (! $responseData) {
             return null;
         }
 
@@ -486,24 +560,27 @@ class EveOnlineProvider extends ServiceProvider
     {
         // Get the .env EVE_CORPORATION_ID
         $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        if (! $corpId) {
             Log::error('Corporation ID is not set in the environment variables.');
+
             return null;
         }
 
         // Get the corporation details using the getCorporation method of the provider
         $corporation = $this->getCorporation($corpId);
-        if (!$corporation) {
+        if (! $corporation) {
             Log::error('Failed to retrieve corporation details.');
+
             return null;
         }
 
         // Check if we have a EveCharacter in the database associated with the CEO $corporation['ceo_id'], and get his user
         $ceoCharacter = EveCharacter::where('character_id', $corporation['ceo_id'])->first();
-        if (!$ceoCharacter) {
+        if (! $ceoCharacter) {
             Log::error('CEO character not found in the database.', [
                 'ceo_id' => $corporation['ceo_id'],
             ]);
+
             return null;
         }
 
@@ -512,14 +589,14 @@ class EveOnlineProvider extends ServiceProvider
 
     public function setCaller(EveCharacter $character): void
     {
-        if (!$character->is_valid) {
+        if (! $character->is_valid) {
             return;
         }
 
         $this->caller = $character;
         // Check if the caller token is expired, if yes, refresh it
         if ($this->caller->isTokenExpired()) {
-            if (!$this->refreshToken($this->caller)) {
+            if (! $this->refreshToken($this->caller)) {
                 Log::error('Failed to refresh token for caller character.', [
                     'character_id' => $this->caller->character_id,
                 ]);
@@ -529,11 +606,7 @@ class EveOnlineProvider extends ServiceProvider
 
     public function getNotifications(EveCharacter $character): ?array
     {
-        if (!$character->is_valid) {
-            return null;
-        }
-
-        return $this->handleApiRequest(function () use ($character) {
+        return $this->handleAuthenticatedApiRequest($character, function () use ($character) {
             return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",
@@ -560,13 +633,13 @@ class EveOnlineProvider extends ServiceProvider
 
         // ESI accepts at most 1000 IDs per request.
         $chunks = array_chunk(array_values(array_unique($ids)), 1000);
-        $map    = [];
+        $map = [];
 
         foreach ($chunks as $chunk) {
             $result = $this->handleApiRequest(function () use ($chunk) {
                 return $this->client->post("{$this->esiUrl}/latest/universe/names/", [
                     'headers' => ['Accept' => 'application/json', 'Content-Type' => 'application/json'],
-                    'json'    => $chunk,
+                    'json' => $chunk,
                 ]);
             });
 
@@ -598,13 +671,14 @@ class EveOnlineProvider extends ServiceProvider
     public function getMainStructures(): ?array
     {
         $ceo = $this->getMainCeo();
-        if (!$ceo) {
+        if (! $ceo) {
             Log::error('No main CEO found for the corporation.');
+
             return null;
         }
 
-        return $this->handleApiRequest(function () use ($ceo) {
-            return $this->client->get("{$this->esiUrl}/latest/corporations/" . env('EVE_CORPORATION_ID') . "/structures/", [
+        return $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/".env('EVE_CORPORATION_ID').'/structures/', [
                 'headers' => [
                     'Authorization' => "Bearer {$ceo->esi_access_token}",
                     'Accept' => 'application/json',
@@ -619,16 +693,10 @@ class EveOnlineProvider extends ServiceProvider
     public function getMainCorporationAssets(): ?array
     {
         $ceo = $this->getMainCeo();
-        if (!$ceo) {
+        if (! $ceo) {
             Log::error('getMainCorporationAssets: no main CEO found for the corporation.');
-            return null;
-        }
 
-        if ($ceo->isTokenExpired()) {
-            if (!$this->refreshToken($ceo)) {
-                Log::error('getMainCorporationAssets: failed to refresh CEO token.');
-                return null;
-            }
+            return null;
         }
 
         $corpId = env('EVE_CORPORATION_ID');
@@ -636,7 +704,7 @@ class EveOnlineProvider extends ServiceProvider
         $results = [];
 
         do {
-            $pageData = $this->handleApiRequest(function () use ($ceo, $corpId, $page) {
+            $pageData = $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $page) {
                 return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/assets/", [
                     'headers' => [
                         'Authorization' => "Bearer {$ceo->esi_access_token}",
@@ -664,28 +732,22 @@ class EveOnlineProvider extends ServiceProvider
     public function getMainStarbases(): ?array
     {
         $ceo = $this->getMainCeo();
-        if (!$ceo) {
+        if (! $ceo) {
             Log::error('getMainStarbases: no main CEO found for the corporation.');
+
             return null;
         }
 
-        if ($ceo->isTokenExpired()) {
-            if (!$this->refreshToken($ceo)) {
-                Log::error('getMainStarbases: failed to refresh CEO token.');
-                return null;
-            }
-        }
-
-        $corpId  = env('EVE_CORPORATION_ID');
-        $page    = 1;
+        $corpId = env('EVE_CORPORATION_ID');
+        $page = 1;
         $results = [];
 
         do {
-            $pageData = $this->handleApiRequest(function () use ($ceo, $corpId, $page) {
+            $pageData = $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $page) {
                 return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/", [
                     'headers' => [
                         'Authorization' => "Bearer {$ceo->esi_access_token}",
-                        'Accept'        => 'application/json',
+                        'Accept' => 'application/json',
                     ],
                     'query' => ['page' => $page],
                 ]);
@@ -708,25 +770,19 @@ class EveOnlineProvider extends ServiceProvider
     public function getMainStarbaseDetail(int $starbaseId, int $systemId): ?array
     {
         $ceo = $this->getMainCeo();
-        if (!$ceo) {
+        if (! $ceo) {
             Log::error('getMainStarbaseDetail: no main CEO found for the corporation.');
-            return null;
-        }
 
-        if ($ceo->isTokenExpired()) {
-            if (!$this->refreshToken($ceo)) {
-                Log::error('getMainStarbaseDetail: failed to refresh CEO token.');
-                return null;
-            }
+            return null;
         }
 
         $corpId = env('EVE_CORPORATION_ID');
 
-        return $this->handleApiRequest(function () use ($ceo, $corpId, $starbaseId, $systemId) {
+        return $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $starbaseId, $systemId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/{$starbaseId}/", [
                 'headers' => [
                     'Authorization' => "Bearer {$ceo->esi_access_token}",
-                    'Accept'        => 'application/json',
+                    'Accept' => 'application/json',
                 ],
                 'query' => ['system_id' => $systemId],
             ]);
@@ -735,11 +791,7 @@ class EveOnlineProvider extends ServiceProvider
 
     public function getSkills(EveCharacter $character): ?array
     {
-        if (!$character->is_valid) {
-            return null;
-        }
-
-        return $this->handleApiRequest(function () use ($character) {
+        return $this->handleAuthenticatedApiRequest($character, function () use ($character) {
             return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/skills/", [
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",

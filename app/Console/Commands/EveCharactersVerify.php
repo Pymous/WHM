@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Services\EveOnlineProvider;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use App\Services\EveOnlineProvider;
 
 class EveCharactersVerify extends Command
 {
@@ -31,26 +31,22 @@ class EveCharactersVerify extends Command
         $characters = \App\Models\EveCharacter::all();
         if ($characters->isEmpty()) {
             Log::info('No EVE Characters found in the database.');
+
             return Command::SUCCESS;
         }
-        Log::info('Found ' . $characters->count() . ' EVE Characters to verify.');
-        $jobs = [];
+        Log::info('Found '.$characters->count().' EVE Characters to verify.');
         foreach ($characters as $character) {
-            // Refresh token to keep it active
-            if ($character->isTokenExpired()) {
-                if (!$provider->refreshToken($character)) {
-                    $character->update(['is_valid' => false]);
+            // Refresh expired tokens and retry characters invalidated by the old
+            // access-token 401 handling. Only refreshToken() may invalidate a
+            // character, and only for a permanent OAuth rejection.
+            if (! $character->is_valid || $character->isTokenExpired()) {
+                if (! $provider->refreshToken($character)) {
                     continue;
                 }
             }
 
-            // Check scopes stored on the character against expected scopes
-            $expectedScopes = explode(' ', config('services.eveonline.scopes'));
-            $actualScopes = explode(' ', $character->esi_scopes ?? '');
-            $isScopesValid = !array_diff($expectedScopes, $actualScopes);
-
             $character->update([
-                'is_valid' => $isScopesValid,
+                'has_required_scopes' => $provider->hasRequiredScopes($character->esi_scopes),
             ]);
         }
 

@@ -66,9 +66,17 @@ const remove = async () => {
         <div
             class="rounded-full border-3 p-1"
             :class="{
-                'border-green-500/50': character.is_valid,
+                'border-green-500/50': character.is_valid && character.has_required_scopes,
+                'border-amber-500/50': character.is_valid && !character.has_required_scopes,
                 'border-red-500/50': !character.is_valid,
             }"
+            :title="
+                !character.is_valid
+                    ? 'EVE authorization is invalid'
+                    : !character.has_required_scopes
+                      ? 'EVE authorization is valid but missing required scopes'
+                      : 'EVE authorization is valid'
+            "
         >
             <img :src="'https://images.evetech.net/characters/' + character.character_id + '/portrait?size=128'" class="w-16 rounded-full" />
         </div>
