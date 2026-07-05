@@ -347,11 +347,11 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
-    public function getCorporationMembersTitles()
+    public function getCorporationMembersTitles(?int $corpId = null)
     {
-        $corpId = env('EVE_CORPORATION_ID');
+        $corpId ??= config('eve.corporations.main');
         if (! $corpId) {
-            Log::error('Corporation ID is not set in the environment variables.');
+            Log::error('Main corporation ID is not configured.');
 
             return null;
         }
@@ -372,11 +372,11 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
-    public function getCorporationMembersTracking()
+    public function getCorporationMembersTracking(?int $corpId = null)
     {
-        $corpId = env('EVE_CORPORATION_ID');
+        $corpId ??= config('eve.corporations.main');
         if (! $corpId) {
-            Log::error('Corporation ID is not set in the environment variables.');
+            Log::error('Main corporation ID is not configured.');
 
             return null;
         }
@@ -414,6 +414,7 @@ class EveOnlineProvider extends ServiceProvider
                 [
                     'name' => $data['name'],
                     'ticker' => $data['ticker'],
+                    'alliance_id' => $data['alliance_id'] ?? null,
                     'description' => $data['description'] ?? null,
                     'url' => $data['url'] ?? null,
                     'ceo_id' => $data['ceo_id'] ?? null,
@@ -491,11 +492,11 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
-    public function getCorporationTitles()
+    public function getCorporationTitles(?int $corpId = null)
     {
-        $corpId = env('EVE_CORPORATION_ID');
+        $corpId ??= config('eve.corporations.main');
         if (! $corpId) {
-            Log::error('Corporation ID is not set in the environment variables.');
+            Log::error('Main corporation ID is not configured.');
 
             return null;
         }
@@ -516,11 +517,11 @@ class EveOnlineProvider extends ServiceProvider
         });
     }
 
-    public function getCorporationDirectors()
+    public function getCorporationDirectors(?int $corpId = null)
     {
-        $corpId = env('EVE_CORPORATION_ID');
+        $corpId ??= config('eve.corporations.main');
         if (! $corpId) {
-            Log::error('Corporation ID is not set in the environment variables.');
+            Log::error('Main corporation ID is not configured.');
 
             return null;
         }
@@ -556,20 +557,11 @@ class EveOnlineProvider extends ServiceProvider
         return $directors;
     }
 
-    public function getMainCeo(): ?EveCharacter
+    public function getCorporationCeo(int $corpId): ?EveCharacter
     {
-        // Get the .env EVE_CORPORATION_ID
-        $corpId = env('EVE_CORPORATION_ID');
-        if (! $corpId) {
-            Log::error('Corporation ID is not set in the environment variables.');
-
-            return null;
-        }
-
-        // Get the corporation details using the getCorporation method of the provider
         $corporation = $this->getCorporation($corpId);
         if (! $corporation) {
-            Log::error('Failed to retrieve corporation details.');
+            Log::error('Failed to retrieve corporation details.', ['corporation_id' => $corpId]);
 
             return null;
         }
@@ -578,6 +570,7 @@ class EveOnlineProvider extends ServiceProvider
         $ceoCharacter = EveCharacter::where('character_id', $corporation['ceo_id'])->first();
         if (! $ceoCharacter) {
             Log::error('CEO character not found in the database.', [
+                'corporation_id' => $corpId,
                 'ceo_id' => $corporation['ceo_id'],
             ]);
 
@@ -585,6 +578,19 @@ class EveOnlineProvider extends ServiceProvider
         }
 
         return $ceoCharacter ?? null;
+    }
+
+    public function getMainCeo(): ?EveCharacter
+    {
+        $corpId = config('eve.corporations.main');
+
+        if (! $corpId) {
+            Log::error('Main corporation ID is not configured.');
+
+            return null;
+        }
+
+        return $this->getCorporationCeo($corpId);
     }
 
     public function setCaller(EveCharacter $character): void
@@ -608,6 +614,18 @@ class EveOnlineProvider extends ServiceProvider
     {
         return $this->handleAuthenticatedApiRequest($character, function () use ($character) {
             return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/notifications/", [
+                'headers' => [
+                    'Authorization' => "Bearer {$character->esi_access_token}",
+                    'Accept' => 'application/json',
+                ],
+            ]);
+        });
+    }
+
+    public function getCharacterCorporationRoles(EveCharacter $character): ?array
+    {
+        return $this->handleAuthenticatedApiRequest($character, function () use ($character) {
+            return $this->client->get("{$this->esiUrl}/latest/characters/{$character->character_id}/roles/", [
                 'headers' => [
                     'Authorization' => "Bearer {$character->esi_access_token}",
                     'Accept' => 'application/json',
@@ -668,19 +686,12 @@ class EveOnlineProvider extends ServiceProvider
         return $result['name'] ?? null;
     }
 
-    public function getMainStructures(): ?array
+    public function getCorporationStructures(int $corpId, EveCharacter $actor): ?array
     {
-        $ceo = $this->getMainCeo();
-        if (! $ceo) {
-            Log::error('No main CEO found for the corporation.');
-
-            return null;
-        }
-
-        return $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo) {
-            return $this->client->get("{$this->esiUrl}/latest/corporations/".env('EVE_CORPORATION_ID').'/structures/', [
+        return $this->handleAuthenticatedApiRequest($actor, function () use ($actor, $corpId) {
+            return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/structures/", [
                 'headers' => [
-                    'Authorization' => "Bearer {$ceo->esi_access_token}",
+                    'Authorization' => "Bearer {$actor->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
             ]);
@@ -690,24 +701,16 @@ class EveOnlineProvider extends ServiceProvider
     /**
      * Fetch all corporation assets, including structure fuel bays.
      */
-    public function getMainCorporationAssets(): ?array
+    public function getCorporationAssets(int $corpId, EveCharacter $actor): ?array
     {
-        $ceo = $this->getMainCeo();
-        if (! $ceo) {
-            Log::error('getMainCorporationAssets: no main CEO found for the corporation.');
-
-            return null;
-        }
-
-        $corpId = env('EVE_CORPORATION_ID');
         $page = 1;
         $results = [];
 
         do {
-            $pageData = $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $page) {
+            $pageData = $this->handleAuthenticatedApiRequest($actor, function () use ($actor, $corpId, $page) {
                 return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/assets/", [
                     'headers' => [
-                        'Authorization' => "Bearer {$ceo->esi_access_token}",
+                        'Authorization' => "Bearer {$actor->esi_access_token}",
                         'Accept' => 'application/json',
                     ],
                     'query' => ['page' => $page],
@@ -729,24 +732,16 @@ class EveOnlineProvider extends ServiceProvider
      * Fetch all corporation POS/starbases across all pages.
      * Returns an empty array (not null) when none exist.
      */
-    public function getMainStarbases(): ?array
+    public function getCorporationStarbases(int $corpId, EveCharacter $actor): ?array
     {
-        $ceo = $this->getMainCeo();
-        if (! $ceo) {
-            Log::error('getMainStarbases: no main CEO found for the corporation.');
-
-            return null;
-        }
-
-        $corpId = env('EVE_CORPORATION_ID');
         $page = 1;
         $results = [];
 
         do {
-            $pageData = $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $page) {
+            $pageData = $this->handleAuthenticatedApiRequest($actor, function () use ($actor, $corpId, $page) {
                 return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/", [
                     'headers' => [
-                        'Authorization' => "Bearer {$ceo->esi_access_token}",
+                        'Authorization' => "Bearer {$actor->esi_access_token}",
                         'Accept' => 'application/json',
                     ],
                     'query' => ['page' => $page],
@@ -754,7 +749,7 @@ class EveOnlineProvider extends ServiceProvider
             });
 
             if ($pageData === null) {
-                break;
+                return null;
             }
 
             $results = array_merge($results, $pageData);
@@ -767,21 +762,16 @@ class EveOnlineProvider extends ServiceProvider
     /**
      * Fetch detail for a single starbase, including its fuel bay contents.
      */
-    public function getMainStarbaseDetail(int $starbaseId, int $systemId): ?array
-    {
-        $ceo = $this->getMainCeo();
-        if (! $ceo) {
-            Log::error('getMainStarbaseDetail: no main CEO found for the corporation.');
-
-            return null;
-        }
-
-        $corpId = env('EVE_CORPORATION_ID');
-
-        return $this->handleAuthenticatedApiRequest($ceo, function () use ($ceo, $corpId, $starbaseId, $systemId) {
+    public function getCorporationStarbaseDetail(
+        int $corpId,
+        EveCharacter $actor,
+        int $starbaseId,
+        int $systemId
+    ): ?array {
+        return $this->handleAuthenticatedApiRequest($actor, function () use ($actor, $corpId, $starbaseId, $systemId) {
             return $this->client->get("{$this->esiUrl}/latest/corporations/{$corpId}/starbases/{$starbaseId}/", [
                 'headers' => [
-                    'Authorization' => "Bearer {$ceo->esi_access_token}",
+                    'Authorization' => "Bearer {$actor->esi_access_token}",
                     'Accept' => 'application/json',
                 ],
                 'query' => ['system_id' => $systemId],

@@ -2,10 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\EveCharacter;
 use App\Models\EveNotification;
 use Illuminate\Console\Command;
-use App\Services\EveOnlineProvider;
 use Illuminate\Support\Facades\Http;
 
 class EveNotificationsBroadcast extends Command
@@ -29,6 +27,14 @@ class EveNotificationsBroadcast extends Command
      */
     public function handle()
     {
+        $corporationIds = config('eve.corporations.operational', []);
+
+        if ($corporationIds === []) {
+            $this->error('No operational EVE corporations are configured.');
+
+            return Command::FAILURE;
+        }
+
         $this->info('Starting to broadcast notifications...');
         $baseUrl = 'https://discord.com/api/v10';
         $botToken = env('DISCORD_BOT_TOKEN');
@@ -43,14 +49,16 @@ class EveNotificationsBroadcast extends Command
         $channels = collect($channelsResponse->json());
 
         // Step 2: Find the destination channel
-        if (!env('DISCORD_BROADCAST_CHANNEL')) {
-            $this->info("Please set the DISCORD_BROADCAST_CHANNEL environment variable to the name of the channel you want to broadcast to.");
+        if (! env('DISCORD_BROADCAST_CHANNEL')) {
+            $this->info('Please set the DISCORD_BROADCAST_CHANNEL environment variable to the name of the channel you want to broadcast to.');
+
             return Command::FAILURE;
         }
         $testChannel = $channels->firstWhere('name', env('DISCORD_BROADCAST_CHANNEL'));
 
-        if (!$testChannel) {
-            $this->info("No #" . env('DISCORD_BROADCAST_CHANNEL') . " channel found in the Discord server.");
+        if (! $testChannel) {
+            $this->info('No #'.env('DISCORD_BROADCAST_CHANNEL').' channel found in the Discord server.');
+
             return Command::FAILURE;
         }
 
@@ -66,15 +74,27 @@ class EveNotificationsBroadcast extends Command
             'StructureLowReagentsAlert',
             'CharLeftCorpMsg',
         ];
-        $notifications = EveNotification::where(['sender_type' => 'corporation', 'is_broadcasted' => false])->whereIn('type', $filter)->get();
+        $notifications = EveNotification::query()
+            ->with('corporation')
+            ->where('sender_type', 'corporation')
+            ->where('is_broadcasted', false)
+            ->whereIn('corporation_id', $corporationIds)
+            ->whereIn('type', $filter)
+            ->get();
+
         foreach ($notifications as $notification) {
             // Step 4: Send a message to the channel
             $messageUrl = "{$baseUrl}/channels/{$channelId}/messages";
 
             $message = $notification->getDiscordBroadcast();
-            if (!$message) {
+            if (! $message) {
                 continue; // Skip if no message is returned
             }
+
+            $corporationLabel = $notification->corporation
+                ? "{$notification->corporation->name} [{$notification->corporation->ticker}]"
+                : "Corporation #{$notification->corporation_id}";
+            $message['embeds'][0]['author'] = ['name' => $corporationLabel];
 
             $messageResponse = Http::withHeaders([
                 'Authorization' => "Bot {$botToken}",
@@ -88,6 +108,7 @@ class EveNotificationsBroadcast extends Command
         }
         $this->info('Broadcasting completed!');
         $this->info('All notifications have been processed and broadcasted successfully.');
+
         return Command::SUCCESS;
     }
 }

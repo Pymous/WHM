@@ -3,9 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\EveCharacter;
-use Illuminate\Http\Request;
 use App\Services\EveOnlineProvider;
-use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 
@@ -20,12 +19,13 @@ class EsiController extends Controller
     {
         Auth::logout();
         Session::flush();
+
         return redirect()->route('landing');
     }
 
     public function authCallback(Request $request, EveOnlineProvider $provider)
     {
-        if (!$request->has('code') || !$request->has('state')) {
+        if (! $request->has('code') || ! $request->has('state')) {
             return redirect()->route('landing')
                 ->with('error', 'Authentication failed. Please try again.');
         }
@@ -35,12 +35,10 @@ class EsiController extends Controller
             $request->input('state')
         );
 
-        if (!$character) {
+        if (! $character) {
             return redirect()->route('landing')
                 ->with('error', 'Authentication failed. Please try again.');
         }
-
-
 
         // Update the character in the database, using provider::getCharacterData()
         $provider = app(EveOnlineProvider::class);
@@ -58,14 +56,14 @@ class EsiController extends Controller
 
     public function corp(EveOnlineProvider $provider)
     {
-        // Get the .env EVE_CORPORATION_ID
-        $corpId = env('EVE_CORPORATION_ID');
-        if (!$corpId) {
+        // This diagnostic route intentionally targets the main corporation only.
+        $corpId = config('eve.corporations.main');
+        if (! $corpId) {
             return 'Corporation ID is not set in the environment variables.';
         }
         // Get the corporation details using the getCorporation method of the provider
         $corporation = $provider->getCorporation($corpId);
-        if (!$corporation) {
+        if (! $corporation) {
             return 'Failed to retrieve corporation details.';
         }
 

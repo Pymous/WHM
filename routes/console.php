@@ -1,7 +1,5 @@
 <?php
 
-use App\Jobs\EveCharactersVerifyJob;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -13,7 +11,7 @@ Schedule::command('eve:characters:verify')->everyFifteenMinutes()->withoutOverla
 Schedule::command('eve:characters:update')->hourly()->withoutOverlapping();
 // Run the eve:discord:structures-summary command every week on friday at 10:00
 Schedule::command('eve:discord:structures-summary')->weeklyOn(5, '10:00')->withoutOverlapping();
-// Get all EVE Notifications from all the available directors from the main corporation
+// Fetch and broadcast notifications for the main and configured holding corporations.
 Schedule::command('eve:notifications:get')->everyTwoMinutes()->withoutOverlapping()->after(function () {
     // After fetching notifications, broadcast them to Discord if needed
     Artisan::call('eve:notifications:broadcast');

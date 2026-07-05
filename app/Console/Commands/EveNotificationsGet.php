@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
-use App\Models\EveCharacter;
 use App\Models\EveNotification;
-use Illuminate\Console\Command;
+use App\Services\EveCorporationAccessResolver;
 use App\Services\EveOnlineProvider;
+use Illuminate\Console\Command;
 
 class EveNotificationsGet extends Command
 {
@@ -26,16 +26,37 @@ class EveNotificationsGet extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(EveOnlineProvider $provider, EveCorporationAccessResolver $access)
     {
-        $this->info('Starting to fetch notifications for all characters in the database...');
-        $provider = app(EveOnlineProvider::class);
-        $characters = EveCharacter::all();
-        foreach ($characters as $character) {
-            $notifications = $provider->getNotifications($character);
-            if (is_null($notifications)) {
+        $corporationIds = config('eve.corporations.operational', []);
+
+        if ($corporationIds === []) {
+            $this->error('No operational EVE corporations are configured.');
+
+            return Command::FAILURE;
+        }
+
+        $this->info('Starting to fetch notifications for configured operational corporations...');
+        $successfulCorporations = 0;
+
+        foreach ($corporationIds as $corporationId) {
+            $character = $access->notificationReader((int) $corporationId);
+
+            if ($character === null) {
+                $this->warn("Corporation {$corporationId}: no authorized notification character is available.");
+
                 continue;
             }
+
+            $notifications = $provider->getNotifications($character);
+            if (is_null($notifications)) {
+                $this->warn("Corporation {$corporationId}: notifications could not be read using {$character->name}.");
+
+                continue;
+            }
+
+            $successfulCorporations++;
+
             foreach ($notifications as $notification) {
                 $text = $notification['text'] ?? '';
                 $parsedText = [];
@@ -58,11 +79,11 @@ class EveNotificationsGet extends Command
                     }
                 }
 
-
                 EveNotification::updateOrCreate(
                     ['notification_id' => $notification['notification_id']],
                     [
                         'character_id' => $character->character_id,
+                        'corporation_id' => $corporationId,
                         'type' => $notification['type'],
                         'sender_id' => $notification['sender_id'],
                         'sender_type' => $notification['sender_type'],
@@ -73,7 +94,8 @@ class EveNotificationsGet extends Command
                 );
             }
         }
-        $this->info('All notifications have been updated or created successfully.');
-        return Command::SUCCESS;
+        $this->info('Configured corporation notifications have been updated.');
+
+        return $successfulCorporations > 0 ? Command::SUCCESS : Command::FAILURE;
     }
 }

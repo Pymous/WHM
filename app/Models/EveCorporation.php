@@ -2,37 +2,43 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EveCorporation extends Model
 {
     protected $fillable = [
         'corporation_id',
+        'alliance_id',
         'name',
         'ticker',
         'description',
         'url',
         'ceo_id',
-        'ceo_name',
-        'founded_at',
+        'creator_id',
+        'date_founded',
+        'home_station_id',
         'member_count',
-        'shares',
         'tax_rate',
-        'public_data', // JSON field for additional public data
+        'war_eligible',
     ];
+
     protected $casts = [
         'corporation_id' => 'integer',
+        'alliance_id' => 'integer',
         'ceo_id' => 'integer',
-        'founded_at' => 'datetime',
+        'creator_id' => 'integer',
+        'date_founded' => 'datetime',
+        'home_station_id' => 'integer',
         'member_count' => 'integer',
-        'shares' => 'integer',
         'tax_rate' => 'float',
-        'public_data' => 'json', // Cast public_data to JSON
+        'war_eligible' => 'boolean',
     ];
+
     protected $table = 'eve_corporations';
+
     protected $primaryKey = 'corporation_id';
+
     public $incrementing = false; // Corporation ID is not auto-incrementing
+
     public $timestamps = true; // Use timestamps for created_at and updated_at
 }

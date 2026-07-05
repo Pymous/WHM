@@ -2,12 +2,10 @@
 
 namespace App\Console\Commands;
 
-use App\Models\User;
 use App\Models\EveCharacter;
-use App\Models\EveCorporation;
-use Illuminate\Support\Carbon;
-use Illuminate\Console\Command;
+use App\Models\User;
 use App\Services\EveOnlineProvider;
+use Illuminate\Console\Command;
 
 class EveCharactersUpdate extends Command
 {
@@ -38,48 +36,51 @@ class EveCharactersUpdate extends Command
 
             if ($characters->isEmpty()) {
                 $this->error("No character found with name containing: {$characterName}");
+
                 return Command::FAILURE;
             }
 
-            $this->info("Found " . $characters->count() . " character(s) matching: {$characterName}");
+            $this->info('Found '.$characters->count()." character(s) matching: {$characterName}");
         } else {
             // Get all characters as before
             $characters = EveCharacter::all();
 
             if ($characters->isEmpty()) {
                 $this->info('No EVE Characters found.');
+
                 return Command::SUCCESS;
             }
 
-            $this->info('Found ' . $characters->count() . ' EVE Characters.');
+            $this->info('Found '.$characters->count().' EVE Characters.');
         }
 
         if ($characters->isEmpty()) {
             $this->info('No EVE Characters found.');
+
             return Command::SUCCESS;
         }
 
         $provider = app(EveOnlineProvider::class);
         $charactersIds = [];
         foreach ($characters as $character) {
-            $this->info('Updating character: ' . $character->name);
+            $this->info('Updating character: '.$character->name);
             $charactersIds[] = $character->character_id;
             try {
                 $data = $provider->getCharacterData($character->character_id);
                 if ($data) {
-                    $this->info('Character updated successfully: ' . $character->name);
+                    $this->info('Character updated successfully: '.$character->name);
                 } else {
-                    $this->warn('No data found for character: ' . $character->name);
+                    $this->warn('No data found for character: '.$character->name);
                 }
 
                 // Check if the $character esi_expires_at is set and if it is expired
                 if ($character->esi_expires_at && $character->esi_expires_at->isPast()) {
-                    $this->warn('Character token expired: ' . $character->name . '. Attempting to refresh token...');
+                    $this->warn('Character token expired: '.$character->name.'. Attempting to refresh token...');
                     // Refresh it by using the $provider refreshToken()
                     $provider->refreshToken($character);
                 }
             } catch (\Exception $e) {
-                $this->error('Error updating character: ' . $character->name . '. Error: ' . $e->getMessage());
+                $this->error('Error updating character: '.$character->name.'. Error: '.$e->getMessage());
             }
         }
 
@@ -89,15 +90,15 @@ class EveCharactersUpdate extends Command
             foreach ($affiliations as $affiliation) {
                 $character = EveCharacter::where('character_id', $affiliation['character_id'])->first();
                 if ($character) {
-                    $this->info('Updating affiliation for character: ' . $affiliation['character_id']);
+                    $this->info('Updating affiliation for character: '.$affiliation['character_id']);
                     $character->corporation_id = $affiliation['corporation_id'] ?? null;
                     $character->save();
                 }
             }
         }
 
-        // Loop over each User and their character, and check if at least one has a corporation_id from the main corp (env('EVE_CORPORATION_ID'))
-        $mainCorpId = env('EVE_CORPORATION_ID');
+        // Holding corporations are operational only; membership remains tied to the main corporation.
+        $mainCorpId = config('eve.corporations.main');
         if ($mainCorpId) {
             $users = User::with('eveCharacters')->get();
             foreach ($users as $user) {
@@ -105,20 +106,21 @@ class EveCharactersUpdate extends Command
                     return $character->corporation_id == $mainCorpId;
                 });
 
-                if ($hasMainCorpCharacter && !$user->is_member) {
+                if ($hasMainCorpCharacter && ! $user->is_member) {
                     $user->is_member = true;
                     $user->save();
                 }
-                if (!$hasMainCorpCharacter) {
+                if (! $hasMainCorpCharacter) {
                     $user->is_member = false;
                     $user->save();
                 }
             }
         } else {
-            $this->warn('EVE_CORPORATION_ID is not set in the environment variables.');
+            $this->warn('The main EVE corporation is not configured.');
         }
 
         $this->info('Characters update process completed successfully.');
+
         return Command::SUCCESS;
     }
 }

@@ -50,8 +50,8 @@ class HandleInertiaRequests extends Middleware
                 'location' => $request->url(),
             ],
             'config' => [
-                'main_corp_id' => env('EVE_CORPORATION_ID', null),
-            ]
+                'main_corp_id' => config('eve.corporations.main'),
+            ],
         ];
     }
 }

@@ -2,8 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\EveUniverse;
-use App\Models\EveCharacter;
 use Illuminate\Database\Eloquent\Model;
 
 class EveNotification extends Model
@@ -11,6 +9,7 @@ class EveNotification extends Model
     protected $fillable = [
         'notification_id',
         'character_id',
+        'corporation_id',
         'type',
         'sender_id',
         'sender_type',
@@ -18,24 +17,36 @@ class EveNotification extends Model
         'text',
         'is_read',
     ];
+
     protected $casts = [
         'notification_id' => 'integer',
         'character_id' => 'integer',
+        'corporation_id' => 'integer',
         'sender_id' => 'integer',
         'timestamp' => 'datetime',
         'text' => 'json',
         'is_read' => 'boolean',
     ];
+
     protected $table = 'eve_notifications';
+
     protected $primaryKey = 'notification_id';
+
     public $incrementing = false; // Notification ID is not auto-incrementing
+
     public $timestamps = true; // Use timestamps for created_at and updated_at
+
     /**
      * Get the character that owns the notification.
      */
     public function character()
     {
         return $this->belongsTo(EveCharacter::class, 'character_id', 'character_id');
+    }
+
+    public function corporation()
+    {
+        return $this->belongsTo(EveCorporation::class, 'corporation_id', 'corporation_id');
     }
 
     public function getDiscordBroadcast()
@@ -58,6 +69,7 @@ class EveNotification extends Model
             default:
                 break;
         }
+
         return null;
     }
 
@@ -73,9 +85,9 @@ class EveNotification extends Model
 
         // Edit shieldValue, armorValue, hullValue to be more readable
         $status = [];
-        $status[] = "Shield: " . bcdiv($this->text['shieldValue'] * 100, '1', 2) . '%';
-        $status[] = "Armor: " . bcdiv($this->text['armorValue'] * 100, '1', 2) . '%';
-        $status[] = "Hull: " . bcdiv($this->text['hullValue'] * 100, '1', 2) . '%';
+        $status[] = 'Shield: '.bcdiv($this->text['shieldValue'] * 100, '1', 2).'%';
+        $status[] = 'Armor: '.bcdiv($this->text['armorValue'] * 100, '1', 2).'%';
+        $status[] = 'Hull: '.bcdiv($this->text['hullValue'] * 100, '1', 2).'%';
 
         // Associate the proper details with EveUniverse data
         $details = [];
@@ -94,7 +106,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarSystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarSystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -103,7 +115,7 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
                     'title' => 'Tower Under Attack',
@@ -142,9 +154,9 @@ class EveNotification extends Model
 
         // Edit shieldValue, armorValue, hullValue to be more readable
         $status = [];
-        $status[] = "Shield: " . bcdiv($this->text['shieldPercentage'], '1', 2) . '%';
-        $status[] = "Armor: " . bcdiv($this->text['armorPercentage'], '1', 2) . '%';
-        $status[] = "Hull: " . bcdiv($this->text['hullPercentage'], '1', 2) . '%';
+        $status[] = 'Shield: '.bcdiv($this->text['shieldPercentage'], '1', 2).'%';
+        $status[] = 'Armor: '.bcdiv($this->text['armorPercentage'], '1', 2).'%';
+        $status[] = 'Hull: '.bcdiv($this->text['hullPercentage'], '1', 2).'%';
 
         // Associate the proper details with EveUniverse data
         $station = EveUniverse::ofType('types')->find($this->text['structureTypeID']);
@@ -155,7 +167,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -164,11 +176,11 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $station . ' Under Attack',
-                    'description' => $station . " currently under attack in {$system}.",
+                    'title' => $station.' Under Attack',
+                    'description' => $station." currently under attack in {$system}.",
                     'fields' => [
                         [
                             'name' => 'Aggressor',
@@ -198,7 +210,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -207,10 +219,10 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $station . ' running VERY low on fuel in ' . $system,
+                    'title' => $station.' running VERY low on fuel in '.$system,
                     'color' => 16753920,
                 ],
             ],
@@ -229,7 +241,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -238,10 +250,9 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         // timestamp is a Windows Filetime Timestamp
-        // Convert the Windows Filetime to a Unix timestamp, and make a Carbon instance out of it 
+        // Convert the Windows Filetime to a Unix timestamp, and make a Carbon instance out of it
         // $epochTimestamp = ($this->text['timestamp'] - 116444736000000000) / 10000000;
         // $carbonTimestamp = \Illuminate\Support\Carbon::createFromTimestamp($epochTimestamp);
-
 
         // // Do timestamp + timeleft and redo the conversion
         // $epochTimeleft = ($this->text['timestamp'] + $this->text['timeLeft']) - 116444736000000000;
@@ -254,10 +265,10 @@ class EveNotification extends Model
         // Currently doesn't work because $carbonTimeleft is off by 2 days and some hours, cause unknown
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $station . ' just lost their Shields in ' . $system,
+                    'title' => $station.' just lost their Shields in '.$system,
                     'color' => 16753920,
                 ],
             ],
@@ -275,7 +286,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -284,10 +295,10 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $station . ' is out of reagents in ' . $system,
+                    'title' => $station.' is out of reagents in '.$system,
                     'color' => 16753920,
                 ],
             ],
@@ -305,7 +316,7 @@ class EveNotification extends Model
         }
 
         // Get the System name from EveUniverse
-        $system  = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
+        $system = EveUniverse::ofType('invNames')->find($this->text['solarsystemID']);
         if ($system) {
             $system = "{$system->name}";
         } else {
@@ -314,10 +325,10 @@ class EveNotification extends Model
         $system = "**{$system}**";
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $station . ' is running low on reagents in ' . $system,
+                    'title' => $station.' is running low on reagents in '.$system,
                     'color' => 16753920,
                 ],
             ],
@@ -327,7 +338,7 @@ class EveNotification extends Model
     private function formatCharLeftCorpMsg()
     {
         $charId = $this->text['charID'] ?? null;
-        if (!$charId) {
+        if (! $charId) {
             return null;
         }
 
@@ -339,10 +350,10 @@ class EveNotification extends Model
         }
 
         return [
-            'content' => "@here",
+            'content' => '@here',
             'embeds' => [
                 [
-                    'title' => $charName . ' has left the corporation.',
+                    'title' => $charName.' has left the corporation.',
                     'color' => 3447003,
                 ],
             ],
