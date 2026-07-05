@@ -140,7 +140,7 @@ class EveDiscordStructuresSummary extends Command
             }
         }
 
-        [$posLines, $offlinePosLines] = $this->formatStarbases(
+        $posLines = $this->formatStarbases(
             $corporationId,
             $starbases ?? [],
             $director,
@@ -156,7 +156,6 @@ class EveDiscordStructuresSummary extends Command
                 $drillLines
             ),
             ...$this->linesToFields('🔵 POS', $posLines),
-            ...$this->linesToFields('🔵 POS (not online)', $offlinePosLines),
             ...$this->linesToFields('⚠️ Access status', $statusLines),
         ];
 
@@ -223,9 +222,6 @@ class EveDiscordStructuresSummary extends Command
         return [array_column($upwellRows, 'line'), array_column($drillRows, 'line')];
     }
 
-    /**
-     * @return array{array<int, string>, array<int, string>}
-     */
     private function formatStarbases(
         int $corporationId,
         array $starbases,
@@ -233,8 +229,13 @@ class EveDiscordStructuresSummary extends Command
         EveOnlineProvider $provider,
         EvePosFuelCalculator $calculator
     ): array {
+        $starbases = array_values(array_filter(
+            $starbases,
+            fn (array $starbase): bool => ($starbase['state'] ?? '') === 'online'
+        ));
+
         if ($starbases === [] || $director === null) {
-            return [[], []];
+            return [];
         }
 
         $idsToResolve = [];
@@ -249,18 +250,16 @@ class EveDiscordStructuresSummary extends Command
                 $moonIds[] = (int) $starbase['moon_id'];
             }
 
-            if (($starbase['state'] ?? '') === 'online') {
-                $detail = $provider->getCorporationStarbaseDetail(
-                    $corporationId,
-                    $director,
-                    (int) $starbase['starbase_id'],
-                    (int) $starbase['system_id']
-                );
-                $details[$starbase['starbase_id']] = $detail;
+            $detail = $provider->getCorporationStarbaseDetail(
+                $corporationId,
+                $director,
+                (int) $starbase['starbase_id'],
+                (int) $starbase['system_id']
+            );
+            $details[$starbase['starbase_id']] = $detail;
 
-                foreach ($detail['fuels'] ?? [] as $fuel) {
-                    $idsToResolve[] = (int) $fuel['type_id'];
-                }
+            foreach ($detail['fuels'] ?? [] as $fuel) {
+                $idsToResolve[] = (int) $fuel['type_id'];
             }
         }
 
@@ -273,10 +272,8 @@ class EveDiscordStructuresSummary extends Command
         }
 
         $onlineRows = [];
-        $offlineLines = [];
 
         foreach ($starbases as $starbase) {
-            $state = $starbase['state'] ?? 'offline';
             $typeId = (int) $starbase['type_id'];
             $systemId = (int) $starbase['system_id'];
             $moonId = isset($starbase['moon_id']) ? (int) $starbase['moon_id'] : null;
@@ -284,12 +281,6 @@ class EveDiscordStructuresSummary extends Command
             $location = $moonId
                 ? ($names[$moonId] ?? "Moon #{$moonId}")
                 : ($names[$systemId] ?? "System #{$systemId}");
-
-            if ($state !== 'online') {
-                $offlineLines[] = "**{$typeName}** - {$location} *({$state})*";
-
-                continue;
-            }
 
             $detail = $details[$starbase['starbase_id']] ?? null;
             if ($detail === null) {
@@ -326,9 +317,8 @@ class EveDiscordStructuresSummary extends Command
         }
 
         $this->sortExpiryRows($onlineRows);
-        sort($offlineLines, SORT_NATURAL | SORT_FLAG_CASE);
 
-        return [array_column($onlineRows, 'line'), $offlineLines];
+        return array_column($onlineRows, 'line');
     }
 
     private function linesToFields(string $name, array $lines): array
