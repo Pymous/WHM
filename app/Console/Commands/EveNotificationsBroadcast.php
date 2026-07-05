@@ -78,6 +78,7 @@ class EveNotificationsBroadcast extends Command
             ->with('corporation')
             ->where('sender_type', 'corporation')
             ->where('is_broadcasted', false)
+            ->where('timestamp', '>=', now()->subHours(24))
             ->whereIn('corporation_id', $corporationIds)
             ->whereIn('type', $filter)
             ->get();

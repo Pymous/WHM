@@ -26,6 +26,7 @@ class EveNotification extends Model
         'timestamp' => 'datetime',
         'text' => 'json',
         'is_read' => 'boolean',
+        'is_broadcasted' => 'boolean',
     ];
 
     protected $table = 'eve_notifications';
