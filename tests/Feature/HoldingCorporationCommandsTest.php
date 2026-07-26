@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\EveCharacter;
+use App\Models\EveCorporation;
 use App\Models\EveNotification;
 use App\Models\User;
 use App\Services\EveCorporationAccessResolver;
 use App\Services\EveOnlineProvider;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Http;
 
 function makeOperationalCharacter(int $corporationId, int $characterId): EveCharacter
 {
@@ -102,6 +104,61 @@ test('notification collection polls one selected character per operational corpo
         ->and(EveNotification::count())->toBe(2);
 });
 
+test('notification collection parses corporation membership notifications', function () {
+    config(['eve.corporations.operational' => [98748326]]);
+    $reader = makeOperationalCharacter(98748326, 2119000013);
+
+    $access = Mockery::mock(EveCorporationAccessResolver::class);
+    $access->shouldReceive('notificationReader')->with(98748326)->once()->andReturn($reader);
+
+    $provider = Mockery::mock(EveOnlineProvider::class);
+    $provider->shouldReceive('getNotifications')->with($reader)->once()->andReturn([
+        [
+            'notification_id' => 2405344239,
+            'sender_id' => 2121924810,
+            'sender_type' => 'character',
+            'text' => "charID: 2121924810\ncorpID: 98748326\n",
+            'timestamp' => '2026-06-20T16:44:00Z',
+            'type' => 'CharLeftCorpMsg',
+            'is_read' => true,
+        ],
+        [
+            'notification_id' => 2423962149,
+            'sender_id' => 2124554993,
+            'sender_type' => 'character',
+            'text' => "applicationText: ''\ncharID: 2124554993\ncorpID: 98748326\n",
+            'timestamp' => '2026-07-23T19:46:00Z',
+            'type' => 'CharAppAcceptMsg',
+        ],
+        [
+            'notification_id' => 2423362115,
+            'sender_id' => 2124554994,
+            'sender_type' => 'character',
+            'text' => "applicationText: ''\ncharID: 2124554994\ncorpID: 98748326\n",
+            'timestamp' => '2026-07-22T15:57:00Z',
+            'type' => 'CorpAppNewMsg',
+        ],
+    ]);
+
+    $this->app->instance(EveOnlineProvider::class, $provider);
+    $this->app->instance(EveCorporationAccessResolver::class, $access);
+
+    $this->artisan('eve:notifications:get')->assertSuccessful();
+
+    expect(EveNotification::find(2405344239)->text)->toMatchArray([
+        'charID' => 2121924810,
+        'corpID' => 98748326,
+    ])->and(EveNotification::find(2423962149)->text)->toMatchArray([
+        'applicationText' => '',
+        'charID' => 2124554993,
+        'corpID' => 98748326,
+    ])->and(EveNotification::find(2423362115)->text)->toMatchArray([
+        'applicationText' => '',
+        'charID' => 2124554994,
+        'corpID' => 98748326,
+    ]);
+});
+
 test('holding corporation characters do not receive main corporation membership', function () {
     config([
         'eve.corporations.main' => 98748326,
@@ -125,4 +182,113 @@ test('holding corporation characters do not receive main corporation membership'
 
     expect($mainCharacter->user->fresh()->is_member)->toBeTrue()
         ->and($holdingCharacter->user->fresh()->is_member)->toBeFalse();
+});
+
+test('notification broadcasting ignores notifications older than 24 hours', function () {
+    config(['eve.corporations.operational' => [98760472]]);
+
+    EveCorporation::create([
+        'corporation_id' => 98760472,
+        'name' => 'Repair Center Distribution',
+        'ticker' => 'F0RED',
+    ]);
+
+    $notificationData = [
+        'character_id' => 2119000031,
+        'corporation_id' => 98760472,
+        'type' => 'StructureFuelAlert',
+        'sender_id' => 1001,
+        'sender_type' => 'corporation',
+        'text' => [
+            'structureTypeID' => 35832,
+            'solarsystemID' => 30000142,
+        ],
+        'is_read' => false,
+    ];
+
+    $recent = EveNotification::create([
+        ...$notificationData,
+        'notification_id' => 9101,
+        'timestamp' => now()->subHours(23),
+    ]);
+    $old = EveNotification::create([
+        ...$notificationData,
+        'notification_id' => 9102,
+        'timestamp' => now()->subHours(25),
+    ]);
+
+    Http::fake([
+        'https://discord.com/api/v10/guilds/*/channels' => Http::response([[
+            'id' => 'notification-channel',
+            'name' => env('DISCORD_BROADCAST_CHANNEL'),
+        ]]),
+        'https://discord.com/api/v10/channels/*/messages' => Http::response([], 200),
+    ]);
+
+    $this->artisan('eve:notifications:broadcast')->assertSuccessful();
+
+    expect($recent->fresh()->is_broadcasted)->toBeTrue()
+        ->and($old->fresh()->is_broadcasted)->toBeFalse();
+
+    Http::assertSentCount(2);
+});
+
+test('notification broadcasting sends corporation membership notifications', function () {
+    config(['eve.corporations.operational' => [98748326]]);
+
+    EveCorporation::create([
+        'corporation_id' => 98748326,
+        'name' => 'Main Corp',
+        'ticker' => 'MAIN',
+    ]);
+
+    foreach ([
+        [9201, 'CharLeftCorpMsg', 2121924810],
+        [9202, 'CharAppAcceptMsg', 2124554993],
+        [9203, 'CorpAppNewMsg', 2124554994],
+    ] as [$notificationId, $type, $charId]) {
+        EveNotification::create([
+            'notification_id' => $notificationId,
+            'character_id' => 2119000041,
+            'corporation_id' => 98748326,
+            'type' => $type,
+            'sender_id' => $charId,
+            'sender_type' => 'character',
+            'timestamp' => now()->subHour(),
+            'text' => ['charID' => $charId, 'corpID' => 98748326],
+            'is_read' => false,
+        ]);
+    }
+
+    Http::fake([
+        'https://discord.com/api/v10/guilds/*/channels' => Http::response([[
+            'id' => 'notification-channel',
+            'name' => env('DISCORD_BROADCAST_CHANNEL'),
+        ]]),
+        'https://discord.com/api/v10/channels/*/messages' => Http::response([], 200),
+    ]);
+
+    $this->artisan('eve:notifications:broadcast')->assertSuccessful();
+
+    expect(EveNotification::where('is_broadcasted', true)->count())->toBe(3);
+
+    $titles = Http::recorded(function ($request) {
+        return str_ends_with($request->url(), '/messages');
+    })->map(function (array $requestAndResponse) {
+        return data_get($requestAndResponse[0]->data(), 'embeds.0.title');
+    })->all();
+
+    expect($titles)
+        ->toContain('Character ID: 2121924810 has left the corporation.')
+        ->toContain('Character ID: 2124554993 has joined the corporation.')
+        ->toContain('Character ID: 2124554994 has applied to join the corporation.');
+
+    Http::assertSent(function ($request) {
+        if (! str_ends_with($request->url(), '/messages')) {
+            return true;
+        }
+
+        return data_get($request->data(), 'embeds.0.author.name') === 'Main Corp [MAIN]';
+    });
+    Http::assertSentCount(4);
 });

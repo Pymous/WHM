@@ -73,10 +73,12 @@ class EveNotificationsBroadcast extends Command
             'StructureNoReagentsAlert',
             'StructureLowReagentsAlert',
             'CharLeftCorpMsg',
+            'CharAppAcceptMsg',
+            'CorpAppNewMsg',
         ];
         $notifications = EveNotification::query()
             ->with('corporation')
-            ->where('sender_type', 'corporation')
+            ->whereIn('sender_type', ['corporation', 'character'])
             ->where('is_broadcasted', false)
             ->where('timestamp', '>=', now()->subHours(24))
             ->whereIn('corporation_id', $corporationIds)

@@ -67,6 +67,10 @@ class EveNotification extends Model
                 return $this->formatStructureNoReagentsAlert();
             case 'CharLeftCorpMsg':
                 return $this->formatCharLeftCorpMsg();
+            case 'CharAppAcceptMsg':
+                return $this->formatCharAppAcceptMsg();
+            case 'CorpAppNewMsg':
+                return $this->formatCorpAppNewMsg();
             default:
                 break;
         }
@@ -338,16 +342,9 @@ class EveNotification extends Model
 
     private function formatCharLeftCorpMsg()
     {
-        $charId = $this->text['charID'] ?? null;
-        if (! $charId) {
+        $charName = $this->characterNameFromNotification();
+        if ($charName === null) {
             return null;
-        }
-
-        $character = EveCharacter::where('character_id', $charId)->first();
-        if ($character) {
-            $charName = $character ? $character->name : "Character ID: {$charId}";
-        } else {
-            $charName = "Character ID: {$charId}";
         }
 
         return [
@@ -359,5 +356,52 @@ class EveNotification extends Model
                 ],
             ],
         ];
+    }
+
+    private function formatCharAppAcceptMsg()
+    {
+        $charName = $this->characterNameFromNotification();
+        if ($charName === null) {
+            return null;
+        }
+
+        return [
+            'content' => '@here',
+            'embeds' => [
+                [
+                    'title' => $charName.' has joined the corporation.',
+                    'color' => 3066993,
+                ],
+            ],
+        ];
+    }
+
+    private function formatCorpAppNewMsg()
+    {
+        $charName = $this->characterNameFromNotification();
+        if ($charName === null) {
+            return null;
+        }
+
+        return [
+            'content' => '@here',
+            'embeds' => [
+                [
+                    'title' => $charName.' has applied to join the corporation.',
+                    'color' => 16753920,
+                ],
+            ],
+        ];
+    }
+
+    private function characterNameFromNotification(): ?string
+    {
+        $charId = $this->text['charID'] ?? null;
+        if (! $charId) {
+            return null;
+        }
+
+        return EveCharacter::where('character_id', $charId)->value('name')
+            ?? "Character ID: {$charId}";
     }
 }
