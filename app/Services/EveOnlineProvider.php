@@ -33,7 +33,9 @@ class EveOnlineProvider extends ServiceProvider
 
     public function __construct()
     {
-        $this->client = new Client;
+        $this->client = new Client([
+            'verify' => config('services.eveonline.verify_ssl', true),
+        ]);
         $this->clientId = config('services.eveonline.client_id');
         $this->clientSecret = config('services.eveonline.client_secret');
         $this->redirectUri = config('services.eveonline.redirect');
@@ -334,6 +336,93 @@ class EveOnlineProvider extends ServiceProvider
                 ],
             ], $options));
         });
+    }
+
+    /**
+     * @return array{entries: array<int, array<string, mixed>>, pages: int}|null
+     */
+    public function getCorporationWalletJournalPage(
+        int $corporationId,
+        int $division,
+        EveCharacter $actor,
+        int $page = 1,
+    ): ?array {
+        return $this->requestCorporationWalletJournalPage(
+            $corporationId,
+            $division,
+            $actor,
+            $page,
+            true,
+        );
+    }
+
+    /**
+     * @return array{entries: array<int, array<string, mixed>>, pages: int}|null
+     */
+    private function requestCorporationWalletJournalPage(
+        int $corporationId,
+        int $division,
+        EveCharacter $actor,
+        int $page,
+        bool $retryOnUnauthorized,
+    ): ?array {
+        if (! $actor->is_valid) {
+            return null;
+        }
+
+        if ($actor->isTokenExpired() && ! $this->refreshToken($actor)) {
+            return null;
+        }
+
+        try {
+            $response = $this->client->get(
+                "{$this->esiUrl}/corporations/{$corporationId}/wallets/{$division}/journal",
+                [
+                    'headers' => [
+                        'Authorization' => "Bearer {$actor->esi_access_token}",
+                        'Accept' => 'application/json',
+                        'X-Compatibility-Date' => '2026-06-09',
+                        'X-Tenant' => 'tranquility',
+                    ],
+                    'query' => ['page' => $page],
+                ],
+            );
+
+            return [
+                'entries' => json_decode($response->getBody()->getContents(), true) ?: [],
+                'pages' => max(1, (int) $response->getHeaderLine('X-Pages')),
+            ];
+        } catch (ClientException $exception) {
+            if ($exception->getResponse()->getStatusCode() === 401 && $retryOnUnauthorized && $this->refreshToken($actor)) {
+                return $this->requestCorporationWalletJournalPage(
+                    $corporationId,
+                    $division,
+                    $actor,
+                    $page,
+                    false,
+                );
+            }
+
+            Log::error('EVE corporation wallet journal request failed', [
+                'corporation_id' => $corporationId,
+                'division' => $division,
+                'page' => $page,
+                'status_code' => $exception->getResponse()->getStatusCode(),
+                'character_id' => $actor->character_id,
+            ]);
+
+            return null;
+        } catch (GuzzleException $exception) {
+            Log::error('EVE corporation wallet journal request failed', [
+                'corporation_id' => $corporationId,
+                'division' => $division,
+                'page' => $page,
+                'error' => $exception->getMessage(),
+                'character_id' => $actor->character_id,
+            ]);
+
+            return null;
+        }
     }
 
     public function getCorporation(int $corpId): ?array
@@ -680,6 +769,21 @@ class EveOnlineProvider extends ServiceProvider
         $result = $this->handleApiRequest(function () use ($moonId) {
             return $this->client->get("{$this->esiUrl}/latest/universe/moons/{$moonId}/", [
                 'headers' => ['Accept' => 'application/json'],
+            ]);
+        });
+
+        return $result['name'] ?? null;
+    }
+
+    public function resolvePlanetName(int $planetId): ?string
+    {
+        $result = $this->handleApiRequest(function () use ($planetId) {
+            return $this->client->get("{$this->esiUrl}/universe/planets/{$planetId}", [
+                'headers' => [
+                    'Accept' => 'application/json',
+                    'X-Compatibility-Date' => '2026-06-09',
+                    'X-Tenant' => 'tranquility',
+                ],
             ]);
         });
 

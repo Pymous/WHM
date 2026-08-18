@@ -38,7 +38,8 @@ return [
     'eveonline' => [
         'client_id' => env('EVE_CLIENT_ID'),
         'client_secret' => env('EVE_CLIENT_SECRET'),
-        'redirect' => env('APP_URL') . '/esi/auth/callback',
+        'redirect' => rtrim(env('APP_URL'), '/') . '/auth/eve/callback',
+        'verify_ssl' => filter_var(env('CURL_SSL_VERIFY', true), FILTER_VALIDATE_BOOL),
         // EVE_SCOPES is a comma-separated list, but we convert it to a space-separated list for ESI
         'scopes' => str_replace(',', ' ', env('EVE_SCOPES', 'publicData esi-characters.read_contacts.v1')),
     ],

@@ -1,16 +1,13 @@
 <?php
 
-use App\Models\User;
-use Inertia\Inertia;
-use App\Models\EveCharacter;
-use App\Services\EveOnlineProvider;
-use App\Http\Middleware\UserIsAdmin;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AdminPiRevenueController;
+use App\Http\Controllers\DiscordController;
 use App\Http\Controllers\EsiController;
 use App\Http\Controllers\EveController;
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\DiscordController;
-use App\Models\EveUniverse;
+use App\Http\Middleware\UserIsAdmin;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::get('/', function () {
     return Inertia::render('Landing');
@@ -20,7 +17,6 @@ Route::get('dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth'])->name('dashboard');
 
-
 // Discord Authentication Routes
 Route::get('/discord/auth/login', [DiscordController::class, 'authLogin'])->name('discord.auth.login');
 Route::get('/discord/auth/callback', [DiscordController::class, 'authCallback'])->name('discord.auth.callback');
@@ -28,7 +24,8 @@ Route::get('/discord/auth/callback', [DiscordController::class, 'authCallback'])
 // ESI Authentication Routes
 Route::get('/esi/auth/login', [EsiController::class, 'authLogin'])->name('esi.auth.login');
 Route::get('/esi/auth/logout', [EsiController::class, 'authLogout'])->name('esi.auth.logout');
-Route::get('/esi/auth/callback', [EsiController::class, 'authCallback'])->name('esi.auth.callback');
+Route::get('/auth/eve/callback', [EsiController::class, 'authCallback'])->name('esi.auth.callback');
+Route::get('/esi/auth/callback', [EsiController::class, 'authCallback']);
 Route::get('/esi/corp', [EsiController::class, 'corp'])->name('esi.corp');
 
 // EVE Routes
@@ -46,6 +43,9 @@ Route::group(['prefix' => 'admin', 'middleware' => [UserIsAdmin::class]], functi
     Route::get('/fittings', [AdminController::class, 'fittingsIndex'])->name('admin.fittings');
     Route::post('/fittings', [AdminController::class, 'fittingsConvertSkillPlan'])->name('admin.fittings.convert');
     Route::post('/fittings/check/{eveCharacter}', [AdminController::class, 'fittingsCheck'])->name('admin.fittings.check');
+    Route::get('/pi-revenue', [AdminPiRevenueController::class, 'index'])->name('admin.pi-revenue');
+    Route::get('/pi-revenue/data', [AdminPiRevenueController::class, 'data'])->name('admin.pi-revenue.data');
+    Route::post('/pi-revenue/sync', [AdminPiRevenueController::class, 'sync'])->name('admin.pi-revenue.sync');
 });
 
-require __DIR__ . '/settings.php';
+require __DIR__.'/settings.php';
