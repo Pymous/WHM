@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\EveNotification;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class EveNotificationsBroadcast extends Command
 {
@@ -37,8 +38,16 @@ class EveNotificationsBroadcast extends Command
 
         $this->info('Starting to broadcast notifications...');
         $baseUrl = 'https://discord.com/api/v10';
-        $botToken = env('DISCORD_BOT_TOKEN');
-        $guildId = env('DISCORD_SERVER_ID');
+        $botToken = config('services.discord.bot_token');
+        $guildId = config('services.discord.server_id');
+        $channelName = config('services.discord.broadcast_channel');
+
+        if (! $botToken || ! $guildId || ! $channelName) {
+            Log::error('EveNotificationsBroadcast: Discord configuration is incomplete.');
+            $this->error('Please configure the Discord bot token, server ID, and broadcast channel.');
+
+            return Command::FAILURE;
+        }
 
         // Step 1: Get all channels in the guild
         $channelsUrl = "{$baseUrl}/guilds/{$guildId}/channels";
@@ -46,18 +55,23 @@ class EveNotificationsBroadcast extends Command
             'Authorization' => "Bot {$botToken}",
         ])->get($channelsUrl);
 
-        $channels = collect($channelsResponse->json());
-
-        // Step 2: Find the destination channel
-        if (! env('DISCORD_BROADCAST_CHANNEL')) {
-            $this->info('Please set the DISCORD_BROADCAST_CHANNEL environment variable to the name of the channel you want to broadcast to.');
+        if (! $channelsResponse->successful()) {
+            Log::error('EveNotificationsBroadcast: Discord API error fetching channels', [
+                'status' => $channelsResponse->status(),
+                'body' => $channelsResponse->body(),
+            ]);
+            $this->error("Discord API error fetching channels: HTTP {$channelsResponse->status()}.");
 
             return Command::FAILURE;
         }
-        $testChannel = $channels->firstWhere('name', env('DISCORD_BROADCAST_CHANNEL'));
+
+        $channels = collect($channelsResponse->json());
+
+        // Step 2: Find the destination channel
+        $testChannel = $channels->firstWhere('name', $channelName);
 
         if (! $testChannel) {
-            $this->info('No #'.env('DISCORD_BROADCAST_CHANNEL').' channel found in the Discord server.');
+            $this->error("No #{$channelName} channel found in the Discord server.");
 
             return Command::FAILURE;
         }
@@ -84,6 +98,7 @@ class EveNotificationsBroadcast extends Command
             ->whereIn('corporation_id', $corporationIds)
             ->whereIn('type', $filter)
             ->get();
+        $failedMessages = 0;
 
         foreach ($notifications as $notification) {
             // Step 4: Send a message to the channel
@@ -107,8 +122,22 @@ class EveNotificationsBroadcast extends Command
             if ($messageResponse->successful()) {
                 $notification->is_broadcasted = true;
                 $notification->save();
+            } else {
+                $failedMessages++;
+                Log::error('EveNotificationsBroadcast: Discord API error posting notification', [
+                    'notification_id' => $notification->notification_id,
+                    'status' => $messageResponse->status(),
+                    'body' => $messageResponse->body(),
+                ]);
             }
         }
+
+        if ($failedMessages > 0) {
+            $this->error("{$failedMessages} notification(s) could not be posted to Discord.");
+
+            return Command::FAILURE;
+        }
+
         $this->info('Broadcasting completed!');
         $this->info('All notifications have been processed and broadcasted successfully.');
 

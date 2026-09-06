@@ -3,10 +3,11 @@
 namespace App\Console\Commands;
 
 use App\Models\EveCharacter;
-use Illuminate\Console\Command;
+use App\Services\EveCorporationAccessResolver;
 use App\Services\EveOnlineProvider;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class EveDiscordSyncRoles extends Command
 {
@@ -27,26 +28,39 @@ class EveDiscordSyncRoles extends Command
     /**
      * Execute the console command.
      */
-    public function handle(EveOnlineProvider $provider)
+    public function handle(EveOnlineProvider $provider, EveCorporationAccessResolver $access)
     {
         $baseUrl = 'https://discord.com/api/v10';
-        $botToken = env('DISCORD_BOT_TOKEN'); // Get from .env file
-        $guildId = env('DISCORD_SERVER_ID');
+        $botToken = config('services.discord.bot_token');
+        $guildId = config('services.discord.server_id');
+        $corporationId = config('eve.corporations.main');
+
+        if (! $botToken || ! $guildId || ! $corporationId) {
+            Log::error('EveDiscordSyncRoles: Discord or corporation configuration is incomplete.');
+            $this->error('Please configure the Discord bot token, server ID, and main EVE corporation.');
+
+            return Command::FAILURE;
+        }
 
         // Get the Discord Members
-        $url = "{$baseUrl}/guilds/{$guildId}/members";
-        $response = Http::withHeaders([
-            'Authorization' => "Bot {$botToken}",
-        ])->get($url, [
-            'limit' => 1000, // Optional: specify the number of members to retrieve
-        ]);
-        $discordUsers = $response->json();
+        $discordUsers = $this->fetchDiscordMembers($baseUrl, (string) $guildId, (string) $botToken);
+
+        if ($discordUsers === null) {
+            return Command::FAILURE;
+        }
 
         // Get the Discord Roles
         $url = "{$baseUrl}/guilds/{$guildId}/roles";
         $response = Http::withHeaders([
             'Authorization' => "Bot {$botToken}",
         ])->get($url);
+
+        if (! $response->successful() || ! is_array($response->json()) || ! array_is_list($response->json())) {
+            $this->discordError('fetching roles', $response->status(), $response->body());
+
+            return Command::FAILURE;
+        }
+
         $discordRoles = collect($response->json());
 
         $roles = [];
@@ -55,21 +69,30 @@ class EveDiscordSyncRoles extends Command
             $roles[$v['name']] = $v['id'];
         }
 
-        // Get the CEO from the Corp App
-        $ceo = $provider->getMainCeo();
-        if (!$ceo) {
-            Log::info('No CEO access found in the database, aborting the command.');
+        // A CEO is preferred, but any linked Director with the scopes required by
+        // this command can keep role synchronization operational.
+        $actor = $access->director((int) $corporationId, [
+            'esi-characters.read_corporation_roles.v1',
+            'esi-corporations.read_corporation_membership.v1',
+            'esi-corporations.read_titles.v1',
+        ]);
+        if (! $actor) {
+            Log::warning('No CEO or Director with the required ESI scopes is available, aborting Discord role sync.', [
+                'corporation_id' => $corporationId,
+            ]);
+
             return Command::FAILURE;
         }
 
-        $provider->setCaller($ceo);
+        $provider->setCaller($actor);
 
         // GET EVE TITLES
-        $eveTitles = $provider->getCorporationTitles();
+        $eveTitles = $provider->getCorporationTitles((int) $corporationId);
         $eveTitlesAssoc = collect();
 
-        if (!$eveTitles) {
+        if (! $eveTitles) {
             Log::info('No titles found in the corporation, aborting the command.');
+
             return Command::FAILURE;
         }
 
@@ -79,12 +102,21 @@ class EveDiscordSyncRoles extends Command
         }
 
         // GET EVE DIRECTORS (Array of character_id)
-        $eveDirectors = $provider->getCorporationDirectors();
+        $eveDirectors = $provider->getCorporationDirectors((int) $corporationId);
+        if ($eveDirectors === null) {
+            Log::warning('Directors could not be read from ESI, aborting Discord role sync.', [
+                'corporation_id' => $corporationId,
+                'actor_character_id' => $actor->character_id,
+            ]);
+
+            return Command::FAILURE;
+        }
 
         // GET EVE MEMBERS
-        $eveMembers = $provider->getCorporationMembersTitles();
-        if (!$eveMembers) {
+        $eveMembers = $provider->getCorporationMembersTitles((int) $corporationId);
+        if (! $eveMembers) {
             Log::info('No members found in the corporation, aborting the command.');
+
             return Command::FAILURE;
         }
 
@@ -97,15 +129,14 @@ class EveDiscordSyncRoles extends Command
                 'is_primary' => true, // Only get primary characters
             ])->first();
 
-
-            if (!$character) {
+            if (! $character) {
                 continue; // Skip if no character found
             }
 
             $user = $character->user; // Get the User associated with the EveCharacter
             if ($user) {
                 // Check if the user is saved as a corp member yet, and if not, update it
-                if (!$user->is_member) {
+                if (! $user->is_member) {
                     $user->is_member = true; // Set the user as a member of the corporation
                     $user->save(); // Save the user to update the is_member field
                     Log::info("User {$user->id} ({$user->name}) is now marked as a member of the corporation.");
@@ -123,7 +154,9 @@ class EveDiscordSyncRoles extends Command
             }
         }
 
-        // Loop on each $users and get the User (in database) 
+        $failedUpdates = 0;
+
+        // Loop on each $users and get the User (in database)
         foreach ($discordUsers as $discordUser) {
             // If that Discord user is in the $members array, it means he is a member of the corp
             if (@$members[$discordUser['user']['id']]) {
@@ -134,20 +167,20 @@ class EveDiscordSyncRoles extends Command
                 $rolesForMember = [];
                 foreach ($discordUser['roles'] as $roleId) {
                     $roleName = collect($discordRoles)->firstWhere('id', $roleId)['name'] ?? null;
-                    if ($roleName && !$eveTitlesAssoc->contains($roleName)) {
+                    if ($roleName && ! $eveTitlesAssoc->contains($roleName)) {
                         $rolesForMember[] = $roleId; // Keep the role if it's not in the EVE titles
                     }
                 }
 
                 // Check if $discordRoles has the role "Member" and add it to the member
-                if (isset($roles['Member']) && !in_array($roles['Member'], $rolesForMember)) {
+                if (isset($roles['Member']) && ! in_array($roles['Member'], $rolesForMember)) {
                     $rolesForMember[] = $roles['Member']; // Add the "Member" role if not already present
                 }
 
                 // Loop over each $member['characters'] (EveCharacter) and check if the character is a director
                 foreach ($member['characters'] as $character) {
                     // If the character is a director, add the "Director" role
-                    if (in_array($character->character_id, $eveDirectors) && isset($roles['Director']) && !in_array($roles['Director'], $rolesForMember)) {
+                    if (in_array($character->character_id, $eveDirectors) && isset($roles['Director']) && ! in_array($roles['Director'], $rolesForMember)) {
                         $rolesForMember[] = $roles['Director']; // Add the "Director" role if not already present
                     }
                 }
@@ -172,23 +205,22 @@ class EveDiscordSyncRoles extends Command
                 } else {
                     // Check if the roles are the same
                     foreach ($rolesForMember as $roleId) {
-                        if (!in_array($roleId, $discordUser['roles'])) {
+                        if (! in_array($roleId, $discordUser['roles'])) {
                             $requireUpdate = true; // At least one role is different, update is required
                             break;
                         }
                     }
                 }
 
-                if (!$requireUpdate) {
+                if (! $requireUpdate) {
                     continue; // No update needed, skip to the next user
                 }
-
 
                 // Find the primary character for the member
                 $primaryCharacter = $member['characters']->firstWhere('is_primary', true);
                 $nick = null;
                 if ($primaryCharacter) {
-                    $nick = "[FO2RE] " . $primaryCharacter->name;
+                    $nick = '[FO2RE] '.$primaryCharacter->name;
                 }
 
                 // Discord API has a rate limit, so we need to wait a bit before updating the user
@@ -203,12 +235,13 @@ class EveDiscordSyncRoles extends Command
                     'nick' => $nick,
                 ]);
 
-                // Loop over each $rolesForMember and call the Discord API to add every role
-                foreach ($rolesForMember as $roleId) {
-                    $addUrl = "{$baseUrl}/guilds/{$guildId}/members/{$discordUser['user']['id']}/roles/{$roleId}";
-                    $addResponse = Http::withHeaders([
-                        'Authorization' => "Bot {$botToken}",
-                    ])->put($addUrl);
+                if (! $updateResponse->successful()) {
+                    $failedUpdates++;
+                    $this->discordError(
+                        "updating member {$discordUser['user']['id']}",
+                        $updateResponse->status(),
+                        $updateResponse->body()
+                    );
                 }
             }
             // This DiscordUser is not in the corporation
@@ -217,7 +250,7 @@ class EveDiscordSyncRoles extends Command
                 $rolesForMember = [];
                 foreach ($discordUser['roles'] as $roleId) {
                     $roleName = collect($discordRoles)->firstWhere('id', $roleId)['name'] ?? null;
-                    if ($roleName && !$eveTitlesAssoc->contains($roleName)) {
+                    if ($roleName && ! $eveTitlesAssoc->contains($roleName)) {
                         $rolesForMember[] = $roleId; // Keep the role if it's not in the EVE titles
                     }
                 }
@@ -236,10 +269,71 @@ class EveDiscordSyncRoles extends Command
                     'Authorization' => "Bot {$botToken}",
                 ])->patch($updateUrl, [
                     'roles' => $rolesForMember,
-                    'nick' => null
+                    'nick' => null,
                 ]);
+
+                if (! $updateResponse->successful()) {
+                    $failedUpdates++;
+                    $this->discordError(
+                        "updating former member {$discordUser['user']['id']}",
+                        $updateResponse->status(),
+                        $updateResponse->body()
+                    );
+                }
             }
         }
+
+        if ($failedUpdates > 0) {
+            $this->error("{$failedUpdates} Discord member update(s) failed.");
+
+            return Command::FAILURE;
+        }
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * @return array<int, array>|null
+     */
+    private function fetchDiscordMembers(string $baseUrl, string $guildId, string $botToken): ?array
+    {
+        $members = [];
+        $after = null;
+
+        do {
+            $query = ['limit' => 1000];
+
+            if ($after !== null) {
+                $query['after'] = $after;
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bot {$botToken}",
+            ])->get("{$baseUrl}/guilds/{$guildId}/members", $query);
+
+            $page = $response->json();
+
+            if (! $response->successful() || ! is_array($page) || ! array_is_list($page)) {
+                $this->discordError('fetching members', $response->status(), $response->body());
+
+                return null;
+            }
+
+            $members = [...$members, ...$page];
+            $after = count($page) === 1000
+                ? data_get(end($page), 'user.id')
+                : null;
+        } while ($after !== null);
+
+        return $members;
+    }
+
+    private function discordError(string $operation, int $status, string $body): void
+    {
+        Log::error("EveDiscordSyncRoles: Discord API error {$operation}", [
+            'status' => $status,
+            'body' => $body,
+        ]);
+        $this->error("Discord API error {$operation}: HTTP {$status}.");
     }
 }

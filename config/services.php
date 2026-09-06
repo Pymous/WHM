@@ -38,7 +38,7 @@ return [
     'eveonline' => [
         'client_id' => env('EVE_CLIENT_ID'),
         'client_secret' => env('EVE_CLIENT_SECRET'),
-        'redirect' => rtrim(env('APP_URL'), '/') . '/auth/eve/callback',
+        'redirect' => rtrim(env('APP_URL'), '/').'/auth/eve/callback',
         'verify_ssl' => filter_var(env('CURL_SSL_VERIFY', true), FILTER_VALIDATE_BOOL),
         // EVE_SCOPES is a comma-separated list, but we convert it to a space-separated list for ESI
         'scopes' => str_replace(',', ' ', env('EVE_SCOPES', 'publicData esi-characters.read_contacts.v1')),
@@ -47,8 +47,11 @@ return [
     'discord' => [
         'client_id' => env('DISCORD_CLIENT_ID'),
         'client_secret' => env('DISCORD_CLIENT_SECRET'),
-        'redirect' => env('APP_URL') . '/discord/auth/callback',
+        'redirect' => env('APP_URL').'/discord/auth/callback',
         'avatar_default_extension' => env('DISCORD_EXTENSION_DEFAULT', 'png'), // only pick from jpg, png, webp
+        'bot_token' => env('DISCORD_BOT_TOKEN'),
+        'server_id' => env('DISCORD_SERVER_ID'),
+        'broadcast_channel' => env('DISCORD_BROADCAST_CHANNEL'),
     ],
 
 ];

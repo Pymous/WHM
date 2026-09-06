@@ -20,6 +20,7 @@ function makeCorporationAccessCharacter(int $corporationId, int $characterId, ar
         'esi_access_token' => 'access-token',
         'esi_refresh_token' => 'refresh-token',
         'esi_expires_at' => now()->addHour(),
+        'esi_scopes' => 'esi-characters.read_notifications.v1 esi-characters.read_corporation_roles.v1',
     ], $attributes));
 }
 
@@ -82,10 +83,13 @@ test('a Station Manager provides structures and notifications but not Director a
         ->and($resolver->notificationReader($corporationId)->is($stationManager))->toBeTrue();
 });
 
-test('invalid or incompletely scoped characters are not access candidates', function () {
+test('invalid characters and characters missing feature scopes are not access candidates', function () {
     $corporationId = 98760475;
     makeCorporationAccessCharacter($corporationId, 2119263902, ['is_valid' => false]);
-    makeCorporationAccessCharacter($corporationId, 2119263903, ['has_required_scopes' => false]);
+    makeCorporationAccessCharacter($corporationId, 2119263903, [
+        'has_required_scopes' => false,
+        'esi_scopes' => 'scope.other',
+    ]);
 
     $provider = Mockery::mock(EveOnlineProvider::class);
     $provider->shouldReceive('getCorporationData')
@@ -95,5 +99,26 @@ test('invalid or incompletely scoped characters are not access candidates', func
 
     $resolver = new EveCorporationAccessResolver($provider);
 
-    expect($resolver->director($corporationId))->toBeNull();
+    expect($resolver->director($corporationId, ['scope.required']))->toBeNull();
+});
+
+test('a character can provide feature access without every application scope', function () {
+    $corporationId = 98760476;
+    $ceo = makeCorporationAccessCharacter($corporationId, 2119263904, [
+        'has_required_scopes' => false,
+        'esi_scopes' => 'esi-corporations.read_structures.v1',
+    ]);
+
+    $provider = Mockery::mock(EveOnlineProvider::class);
+    $provider->shouldReceive('getCorporationData')
+        ->once()
+        ->with($corporationId)
+        ->andReturn(['ceo_id' => (int) $ceo->character_id]);
+    $provider->shouldNotReceive('getCharacterCorporationRoles');
+
+    $resolver = new EveCorporationAccessResolver($provider);
+
+    expect($resolver->director($corporationId, [
+        'esi-corporations.read_structures.v1',
+    ])->is($ceo))->toBeTrue();
 });

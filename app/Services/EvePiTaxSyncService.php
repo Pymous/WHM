@@ -24,7 +24,9 @@ class EvePiTaxSyncService
      */
     public function sync(int $corporationId): array
     {
-        $actor = $this->access->director($corporationId);
+        $actor = $this->access->director($corporationId, [
+            'esi-wallet.read_corporation_wallets.v1',
+        ]);
 
         if (! $actor) {
             throw new RuntimeException("No Director with valid ESI scopes is available for corporation {$corporationId}.");

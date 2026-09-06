@@ -10,9 +10,9 @@ class EveCorporationAccessResolver
 {
     public function __construct(private readonly EveOnlineProvider $provider) {}
 
-    public function director(int $corporationId): ?EveCharacter
+    public function director(int $corporationId, array $requiredScopes = []): ?EveCharacter
     {
-        [$candidates, $ceoId] = $this->candidates($corporationId);
+        [$candidates, $ceoId] = $this->candidates($corporationId, $requiredScopes);
 
         foreach ($candidates as $candidate) {
             if ((int) $candidate->character_id === $ceoId) {
@@ -27,9 +27,9 @@ class EveCorporationAccessResolver
         return null;
     }
 
-    public function structureManager(int $corporationId): ?EveCharacter
+    public function structureManager(int $corporationId, array $requiredScopes = []): ?EveCharacter
     {
-        [$candidates, $ceoId] = $this->candidates($corporationId);
+        [$candidates, $ceoId] = $this->candidates($corporationId, $requiredScopes);
 
         foreach ($candidates as $candidate) {
             if ((int) $candidate->character_id === $ceoId) {
@@ -48,13 +48,15 @@ class EveCorporationAccessResolver
 
     public function notificationReader(int $corporationId): ?EveCharacter
     {
-        return $this->structureManager($corporationId);
+        return $this->structureManager($corporationId, [
+            'esi-characters.read_notifications.v1',
+        ]);
     }
 
     /**
      * @return array{Collection<int, EveCharacter>, int|null}
      */
-    private function candidates(int $corporationId): array
+    private function candidates(int $corporationId, array $requiredScopes): array
     {
         $corporation = $this->corporationData($corporationId);
         $ceoId = isset($corporation['ceo_id']) ? (int) $corporation['ceo_id'] : null;
@@ -62,12 +64,23 @@ class EveCorporationAccessResolver
         $candidates = EveCharacter::query()
             ->where('corporation_id', $corporationId)
             ->where('is_valid', true)
-            ->where('has_required_scopes', true)
             ->get()
+            ->filter(fn (EveCharacter $character): bool => $this->hasScopes($character, $requiredScopes))
             ->sortByDesc(fn (EveCharacter $character): bool => (int) $character->character_id === $ceoId)
             ->values();
 
         return [$candidates, $ceoId];
+    }
+
+    private function hasScopes(EveCharacter $character, array $requiredScopes): bool
+    {
+        if ($requiredScopes === []) {
+            return true;
+        }
+
+        $actualScopes = preg_split('/[\s,]+/', trim((string) $character->esi_scopes)) ?: [];
+
+        return array_diff($requiredScopes, $actualScopes) === [];
     }
 
     private function corporationData(int $corporationId): ?array

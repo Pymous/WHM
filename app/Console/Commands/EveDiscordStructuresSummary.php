@@ -61,7 +61,7 @@ class EveDiscordStructuresSummary extends Command
         }
 
         foreach ($this->batchEmbeds($embeds) as $batch) {
-            if (! $this->sendToDiscord($messageUrl, env('DISCORD_BOT_TOKEN'), ['embeds' => $batch])) {
+            if (! $this->sendToDiscord($messageUrl, config('services.discord.bot_token'), ['embeds' => $batch])) {
                 return Command::FAILURE;
             }
         }
@@ -84,8 +84,14 @@ class EveDiscordStructuresSummary extends Command
             ? "{$corporation['name']} [{$corporation['ticker']}]"
             : "Corporation #{$corporationId}";
 
-        $director = $access->director($corporationId);
-        $structureActor = $director ?? $access->structureManager($corporationId);
+        $director = $access->director($corporationId, [
+            'esi-corporations.read_structures.v1',
+            'esi-corporations.read_starbases.v1',
+            'esi-assets.read_corporation_assets.v1',
+        ]);
+        $structureActor = $director ?? $access->structureManager($corporationId, [
+            'esi-corporations.read_structures.v1',
+        ]);
         $statusLines = [];
         $accessible = false;
 
@@ -434,12 +440,13 @@ class EveDiscordStructuresSummary extends Command
     private function discordMessageUrl(): ?string
     {
         $baseUrl = 'https://discord.com/api/v10';
-        $botToken = env('DISCORD_BOT_TOKEN');
-        $guildId = env('DISCORD_SERVER_ID');
-        $channelName = env('DISCORD_BROADCAST_CHANNEL');
+        $botToken = config('services.discord.bot_token');
+        $guildId = config('services.discord.server_id');
+        $channelName = config('services.discord.broadcast_channel');
 
-        if (! $channelName) {
-            $this->error('Please set DISCORD_BROADCAST_CHANNEL.');
+        if (! $botToken || ! $guildId || ! $channelName) {
+            Log::error('EveDiscordStructuresSummary: Discord configuration is incomplete.');
+            $this->error('Please configure the Discord bot token, server ID, and broadcast channel.');
 
             return null;
         }
@@ -448,6 +455,10 @@ class EveDiscordStructuresSummary extends Command
             ->get("{$baseUrl}/guilds/{$guildId}/channels");
 
         if (! $response->successful()) {
+            Log::error('EveDiscordStructuresSummary: Discord API error fetching channels', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
             $this->error("Discord API error fetching channels: HTTP {$response->status()}.");
 
             return null;
@@ -456,6 +467,9 @@ class EveDiscordStructuresSummary extends Command
         $channel = collect($response->json())->firstWhere('name', $channelName);
 
         if (! $channel) {
+            Log::error('EveDiscordStructuresSummary: configured Discord channel was not found', [
+                'channel' => $channelName,
+            ]);
             $this->error("No #{$channelName} channel found.");
 
             return null;

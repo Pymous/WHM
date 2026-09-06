@@ -9,6 +9,14 @@ use App\Services\EveOnlineProvider;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 
+beforeEach(function () {
+    config([
+        'services.discord.bot_token' => 'discord-test-token',
+        'services.discord.server_id' => 'discord-test-server',
+        'services.discord.broadcast_channel' => 'eve-alerts',
+    ]);
+});
+
 function makeOperationalCharacter(int $corporationId, int $characterId): EveCharacter
 {
     $user = User::create(['name' => "Operational User {$characterId}"]);
@@ -44,8 +52,13 @@ test('the structures summary groups all operational corporations', function () {
     $provider->shouldReceive('getCorporationStarbases')->twice()->andReturn([]);
 
     $access = Mockery::mock(EveCorporationAccessResolver::class);
-    $access->shouldReceive('director')->with(98748326)->once()->andReturn($mainActor);
-    $access->shouldReceive('director')->with(98760472)->once()->andReturn($holdingActor);
+    $requiredScopes = [
+        'esi-corporations.read_structures.v1',
+        'esi-corporations.read_starbases.v1',
+        'esi-assets.read_corporation_assets.v1',
+    ];
+    $access->shouldReceive('director')->with(98748326, $requiredScopes)->once()->andReturn($mainActor);
+    $access->shouldReceive('director')->with(98760472, $requiredScopes)->once()->andReturn($holdingActor);
     $access->shouldNotReceive('structureManager');
 
     $this->app->instance(EveOnlineProvider::class, $provider);
@@ -220,7 +233,7 @@ test('notification broadcasting ignores notifications older than 24 hours', func
     Http::fake([
         'https://discord.com/api/v10/guilds/*/channels' => Http::response([[
             'id' => 'notification-channel',
-            'name' => env('DISCORD_BROADCAST_CHANNEL'),
+            'name' => config('services.discord.broadcast_channel'),
         ]]),
         'https://discord.com/api/v10/channels/*/messages' => Http::response([], 200),
     ]);
@@ -263,7 +276,7 @@ test('notification broadcasting sends corporation membership notifications', fun
     Http::fake([
         'https://discord.com/api/v10/guilds/*/channels' => Http::response([[
             'id' => 'notification-channel',
-            'name' => env('DISCORD_BROADCAST_CHANNEL'),
+            'name' => config('services.discord.broadcast_channel'),
         ]]),
         'https://discord.com/api/v10/channels/*/messages' => Http::response([], 200),
     ]);
