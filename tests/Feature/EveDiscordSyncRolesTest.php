@@ -7,7 +7,7 @@ use App\Services\EveOnlineProvider;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
-test('Discord role sync uses configured credentials and a scoped corporation actor', function () {
+test('Discord role sync uses configured credentials and a scoped corporation actor', function (array $eveTitles, array $memberTitles) {
     $corporationId = 98748326;
     config([
         'eve.corporations.main' => $corporationId,
@@ -44,15 +44,13 @@ test('Discord role sync uses configured credentials and a scoped corporation act
 
     $provider = Mockery::mock(EveOnlineProvider::class);
     $provider->shouldReceive('setCaller')->once()->with($actor);
-    $provider->shouldReceive('getCorporationTitles')->once()->with($corporationId)->andReturn([
-        ['title_id' => 1, 'name' => 'Officer'],
-    ]);
+    $provider->shouldReceive('getCorporationTitles')->once()->with($corporationId)->andReturn($eveTitles);
     $provider->shouldReceive('getCorporationDirectors')->once()->with($corporationId)->andReturn([
         (int) $actor->character_id,
     ]);
     $provider->shouldReceive('getCorporationMembersTitles')->once()->with($corporationId)->andReturn([[
         'character_id' => (int) $actor->character_id,
-        'titles' => [1],
+        'titles' => $memberTitles,
     ]]);
 
     $this->app->instance(EveCorporationAccessResolver::class, $access);
@@ -92,6 +90,7 @@ test('Discord role sync uses configured credentials and a scoped corporation act
         }
 
         return $request->hasHeader('Authorization', 'Bot cached-bot-token')
+            && array_is_list(json_decode($request->body(), true)['roles'])
             && data_get($request->data(), 'nick') === '[FO2RE] Director Character'
             && collect(data_get($request->data(), 'roles'))->sort()->values()->all() === [
                 'director-role',
@@ -100,7 +99,20 @@ test('Discord role sync uses configured credentials and a scoped corporation act
                 'other-role',
             ];
     });
-});
+})->with([
+    'ordinary title' => [
+        [['title_id' => 1, 'name' => 'Officer']],
+        [1],
+    ],
+    'Member and Director titles followed by another role' => [
+        [
+            ['title_id' => 2, 'name' => 'Member'],
+            ['title_id' => 3, 'name' => 'Director'],
+            ['title_id' => 1, 'name' => 'Officer'],
+        ],
+        [2, 3, 1],
+    ],
+]);
 
 test('Discord role sync fails cleanly when Discord rejects the configured token', function () {
     config([

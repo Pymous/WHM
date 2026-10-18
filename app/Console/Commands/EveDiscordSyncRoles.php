@@ -195,8 +195,9 @@ class EveDiscordSyncRoles extends Command
                     }
                 }
 
-                // Make sure we only have unique roles
-                $rolesForMember = array_unique($rolesForMember);
+                // Discord expects a JSON list. Duplicates from EVE titles can
+                // leave gaps in the keys, which JSON would encode as an object.
+                $rolesForMember = array_values(array_unique($rolesForMember));
 
                 // Check if $rolesForMember is different from $discordUser['roles'], if not, we can skip the update
                 $requireUpdate = false;
